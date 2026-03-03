@@ -1,0 +1,149 @@
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#    http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Authors
+#   Oscar Kogenhop
+
+import numpy as np
+from gspy.core.turbomap import TTurboMap
+import gspy.core.system as fsys
+
+class TCompressorMap(TTurboMap):
+    def __init__(self, host_component, name, MapFileName, OL_xcol, OL_Ycol, ShaftString, Ncmapdes, Betamapdes):
+        super().__init__(host_component, name, MapFileName, OL_xcol, OL_Ycol, ShaftString, Ncmapdes, Betamapdes)
+
+    def GetSlWcValues(self):
+        return self.sl_wc_array
+
+    def GetSlPrValues(self):
+        return self.sl_pr_array
+
+    def ReadMap(self, filename):
+        super().ReadMap(filename)
+        self.nc_values, self.beta_values, self.wc_array = self.ReadNcBetaCrossTable(self.mapfile, 'MASS FLOW')
+        self.nc_values, self.beta_values, self.eta_array = self.ReadNcBetaCrossTable(self.mapfile, 'EFFICIENCY')
+        self.nc_values, self.beta_values, self.pr_array = self.ReadNcBetaCrossTable(self.mapfile, 'PRESSURE RATIO')
+        dummy_value, self.sl_wc_array, self.sl_pr_array = self.ReadNcBetaCrossTable(self.mapfile, 'SURGE LINE')
+        self.DefineInterpolationFunctions()
+
+    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
+        super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series)
+
+        if use_scaled_map:
+            self.compSlWcArrayValues = self.sl_wc_array * self.SFmap_Wc
+            # must scale around PR = 1
+            # self.compSlPRArrayValues = self.sl_pr_array * self.SFmap_PR
+            self.compSlPRArrayValues = (self.sl_pr_array - 1) * self.SFmap_PR + 1
+        else:
+            self.compSlWcArrayValues = self.sl_wc_array
+            self.compSlPRArrayValues = self.sl_pr_array
+
+        # Plot Wc-PR top subplot
+        for index, NcValue in enumerate(self.NcArrayValues):
+            x = self.WcArrayValues[index]
+            y = self.PRArrayValues[index]
+            self.main_plot_axis.plot(x, y, linewidth=0.25, linestyle='dashed', color='black', label=str(NcValue))
+            # Add NcValue text at the last point of the curve
+            ymin, ymax = self.main_plot_axis.get_ylim()
+            # self.main_plot_axis.text(x[-1], y[-1], f'{NcValue:.1f}', fontsize=8, ha='left', va='center')
+            if index == 0:
+                text_label = f'Nc = {NcValue:.1f}'
+            else:
+                text_label = f'{NcValue:.1f}'
+            self.main_plot_axis.text(
+                x[0], y[0], text_label,
+                fontsize=8, ha='left', va='center'
+            )
+        self.main_plot_axis.set_xlabel('Corected massflow')
+        self.main_plot_axis.set_ylabel('Pressure Ratio')
+
+        # Plot surge line
+        self.main_plot_axis.plot(self.compSlWcArrayValues, self.compSlPRArrayValues[0], linewidth=1.0, linestyle='solid', color='red', label='Surge Line')
+        # self.ax.legend()
+
+        # Contours
+        self.main_plot_axis.contourf(self.WcArrayValues,self.PRArrayValues,self.EtaArrayValues, 14 , cmap='RdYlGn', alpha=0.3)
+        CS = self.main_plot_axis.contour(self.WcArrayValues,self.PRArrayValues,self.EtaArrayValues,10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
+        self.main_plot_axis.clabel(CS, fontsize=7, inline=True)
+
+        # Design point
+        if do_plot_design_point:
+            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(),
+                                     fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(),
+                                     markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow',
+                                     markeredgecolor='black')
+
+        # Operating line
+        if do_plot_series:
+            # Plotting Wc - PR
+            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),
+                                     fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
+                                     linewidth=1.5, linestyle='solid', color='navy')
+
+        self.map_figure.savefig(self.map_figure_pathname)
+
+    def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
+        super().PlotDualMap(eta_name, use_scaled_map, do_plot_design_point, do_plot_series)
+
+        # Plot Wc-Eta top subplot
+        for index, NcValue in enumerate(self.NcArrayValues):
+            self.main_plot_axis.plot(self.WcArrayValues[index], self.EtaArrayValues[index], linewidth=0.25, linestyle='dashed', color='black', label=str(round(NcValue)))
+            # 1.6.0.1 self.main_plot_axis.text(8, np.sin(8), "sin(x)", fontsize=12, color="blue")
+            # 1.6.0.4
+            x = np.asarray(self.WcArrayValues[index])
+            y = np.asarray(self.EtaArrayValues[index])
+            # First line gets "Nc=\n<value>", others just "<value>"
+            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+
+            # Optional: stagger vertical offset a bit to reduce collisions when ends align
+            dy = (index % 2) * 6 - 3  # -3, +3, -3, +3...
+            self._annotate_line_end(
+                self.main_plot_axis, x, y,
+                label_txt, which="first", color="black", dx=4, dy=dy, fontsize=7
+            )
+
+        self.main_plot_axis.set_ylabel('Efficiency')
+        # self.main_plot_axis.set_xlabel('Pressure Ratio')
+
+        # Plot Pr-Eta bottom subplot
+        for index, NcValue in enumerate(self.NcArrayValues):
+            self.secondary_plot_axis.plot(self.WcArrayValues[index], self.PRArrayValues[index], linewidth=0.25, linestyle='dashed', color='black', label=str(round(NcValue)))
+            # 1.6.0.4
+            x = np.asarray(self.WcArrayValues[index])
+            y = np.asarray(self.PRArrayValues[index])
+            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+            dy = (index % 2) * 6 - 3
+            self._annotate_line_end(
+                self.secondary_plot_axis, x, y,
+                label_txt, which="first", color="black", dx=4, dy=dy, fontsize=7
+            )
+
+        self.secondary_plot_axis.set_ylabel('Pressure Ratio')
+        self.secondary_plot_axis.set_xlabel('Corrected Mass Flow')
+
+        # Design point
+        if do_plot_design_point:
+            #  1.5
+            # self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')]['Eta_is_' + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][eta_name + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+
+        # Operating line
+        if do_plot_series:
+            # Plotting Wc - PR
+            #  1.5
+            # self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')]['Eta_is_' + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][eta_name + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+
+        # self.dual_map_figure.tight_layout()
+        self.dual_map_figure.savefig(self.map_figure_pathname)
