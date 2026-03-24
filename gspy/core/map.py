@@ -49,7 +49,7 @@ class TMap:
         # Mapnaming, override or extend in child classes
         # 1.4
         # self.map_figure_pathname = output_dir + self.name + '.jpg'
-        self.map_figure_pathname = output_dir / (self.name + ".jpg")
+        self.map_figure_pathname = output_dir / (self.name + ".png")
         # Create the directory if it doesn't exist
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
