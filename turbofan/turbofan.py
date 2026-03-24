@@ -106,6 +106,8 @@ def main():
     fg.InitializeGas()
     fsys.ErrorTolerance = 0.0001
 
+    fsys.VERBOSE = False  # If print performance simulation result to console
+
     # run the system model Design Point (DP) calculation
     fsys.Mode = 'DP'
     print("Design point (DP) results")
