@@ -13,9 +13,12 @@
 # Authors
 #   Oscar Kogenhop
 
+import pickle
+
 import numpy as np
 from gspy.core.turbomap import TTurboMap
 import gspy.core.system as fsys
+import matplotlib.pyplot as plt
 
 class TCompressorMap(TTurboMap):
     def __init__(self, host_component, name, MapFileName, OL_xcol, OL_Ycol, ShaftString, Ncmapdes, Betamapdes):
@@ -35,7 +38,7 @@ class TCompressorMap(TTurboMap):
         dummy_value, self.sl_wc_array, self.sl_pr_array = self.ReadNcBetaCrossTable(self.mapfile, 'SURGE LINE')
         self.DefineInterpolationFunctions()
 
-    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
+    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True, surge_margin = 5):
         super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series)
 
         if use_scaled_map:
@@ -63,7 +66,7 @@ class TCompressorMap(TTurboMap):
                 x[0], y[0], text_label,
                 fontsize=8, ha='left', va='center'
             )
-        self.main_plot_axis.set_xlabel('Corected massflow')
+        self.main_plot_axis.set_xlabel('Corrected massflow')
         self.main_plot_axis.set_ylabel('Pressure Ratio')
 
         # Plot surge line
@@ -89,7 +92,32 @@ class TCompressorMap(TTurboMap):
                                      fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
                                      linewidth=1.5, linestyle='solid', color='navy')
 
-        self.map_figure.savefig(self.map_figure_pathname)
+            wc = fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy()
+            pr = fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy()
+
+            arrow_dx = np.diff(wc) / 2
+            arrow_dy = np.diff(pr) / 2
+            arrow_tail_x = wc[:-1]
+            arrow_tail_y = pr[:-1]
+            arrow_x = (arrow_tail_x + arrow_dx)
+            arrow_y = (arrow_tail_y + arrow_dy)
+
+            n_arrow = 8
+            for i in np.arange(-1, len(arrow_x), int(len(wc) / n_arrow))[1:]:
+                self.main_plot_axis.annotate('', (arrow_x[i], arrow_y[i]), (arrow_tail_x[i], arrow_tail_y[i]),
+                                             arrowprops=dict(width=0.01, headwidth=4, headlength=6,
+                                                             facecolor='navy', edgecolor='navy'))
+            surge_line_points = np.vstack([self.compSlWcArrayValues, self.compSlPRArrayValues[0]])
+            np.save(f'{self.name}_surge', surge_line_points)
+            op_line_points = np.vstack([wc, pr])
+            np.save(f'{self.name}_op_line', op_line_points)
+        plt.tight_layout()
+
+        # Save plot handle for further processing
+        with open(f"{self.name}_plot.pickle", "wb") as f:
+            pickle.dump(self.map_figure, f)
+
+        self.map_figure.savefig(self.map_figure_pathname, dpi=100)
 
     def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
         super().PlotDualMap(eta_name, use_scaled_map, do_plot_design_point, do_plot_series)
