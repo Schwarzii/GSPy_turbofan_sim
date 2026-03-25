@@ -54,7 +54,7 @@ def main():
 
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
-    FuelControl = TControl('Control', '', 1.11, 1600, 1100, -50, None)
+    FuelControl = TControl('Control', '', 1.11, 1600, 1100, -10, None)
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
