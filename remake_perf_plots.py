@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-sim_data = pd.read_csv("turbofan/output/turbofan.csv")
+sim_data = pd.read_csv("turbofan_demo/output/turbofan.csv")
 sim_data['TSFC'] = sim_data['Wf_combustor1'] / (sim_data['FN'] * 1000) * 3600
 dp_perf = sim_data[sim_data['Mode'] == 'DP']
 od_perf = sim_data[sim_data['Mode'] == 'OD']
@@ -91,19 +91,19 @@ def surge_line_limit(map_name='core', sm_pct=0):
         case 'duct':
             map_name = 'FAN_BST_map_duct'
         case 'hpc': map_name = 'HPC_map'
-    surge_line = np.load(f'turbofan/{map_name}_surge.npy')
+    surge_line = np.load(f'turbofan_demo/{map_name}_surge.npy')
     sm_line = surge_line[0] * (1 + sm_pct / 100)
     surge_fit = np.poly1d(np.polyfit(sm_line, surge_line[1], 6))
     surge_inv_fit = np.poly1d(np.polyfit(surge_line[1], surge_line[0], 6))
 
-    op_line = np.load(f'turbofan/{map_name}_op_line.npy')
+    op_line = np.load(f'turbofan_demo/{map_name}_op_line.npy')
     op_fit = np.poly1d(np.polyfit(op_line[0], op_line[1], 6))
 
     wc_fit = np.poly1d(np.polyfit(op_line[0], od_perf['N1%'], 6))
     # fit_plot(op_line[0], od_perf['N1%'], wc_fit)
 
     if sm_pct != 0:
-        with open(f"turbofan/{map_name}_plot.pickle", "rb") as f:
+        with open(f"turbofan_demo/{map_name}_plot.pickle", "rb") as f:
             map_plot = pickle.load(f)
 
         map_plot.axes[0].plot(surge_line[0] * (1 + sm_pct / 100), surge_line[1], lw=1.0, ls='dashed',
