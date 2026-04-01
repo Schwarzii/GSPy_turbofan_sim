@@ -20,7 +20,6 @@ from gspy.core import utils as fu
 
 from gspy.core.control import TControl
 from gspy.core.ambient import TAmbient
-from gspy.core.shaft import TShaft
 from gspy.core.inlet import TInlet
 from gspy.core.fan import TFan
 from gspy.core.compressor import TCompressor
@@ -30,7 +29,6 @@ from gspy.core.duct import TDuct
 from gspy.core.exhaustnozzle import TExhaustNozzle
 
 import os
-import matplotlib.pyplot as plt
 from pathlib import Path
 
     # IMPORTANT NOTE TO THIS MODEL FILE
@@ -41,11 +39,12 @@ from pathlib import Path
     # stall margin exceedance etc.
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-def main():
+def main(od_range=(1600, 1100, -50, None), fuel_composition=None,
+         output_dir='output'):
     # Paths
     project_dir = Path(__file__).resolve().parent
     map_path = project_dir / "maps"
-    fg.output_path = project_dir / "output"
+    fg.output_path = project_dir / output_dir
 
     # create Ambient conditions object (to set ambient/inlet/flight conditions)
     #                              Altitude, Mach, dTs,    Ps0,    Ts0
@@ -54,7 +53,18 @@ def main():
 
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
-    FuelControl = TControl('Control', '', 1.11, 1600, 1100, -10, None)
+    # FuelControl = TControl('Control', '', 1.11, 1600, 1100, -10, None)
+    # FuelControl = TControl('Control', '', 1.11,
+    #                        24.45 * 0.9, 24.45 * 1.1, 24.45 * 0.2 / 2, 'FN')
+    FuelControl = TControl('Control', '', 0.46, *od_range)
+
+    if fuel_composition is None:
+        combustor = TCombustor('combustor1',  '',  FuelControl,           3,4,   1.1 , 1500,    1, 1,
+                                                        None,      43031, 1.9167, 0, '', None)
+    else:
+        combustor = TCombustor('combustor1',  '',  FuelControl,           3,4,   0.46 , 1500,    1, 1,
+                               None, None, None, None, fuel_composition, None)
+
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
@@ -63,7 +73,7 @@ def main():
 
                         TInlet('Inlet1',          '', None,           0,2,   337, 1    ),
 
-                        # for turbofan, note that fan has 2 GasOut outputs
+                        # for turbofan_demo, note that fan has 2 GasOut outputs
                         TFan('FAN_BST',map_path / 'bigfanc.map', 2, 25, 21,   1,   4880, 0.8696, 5.3, 0.95, 0.7, 2.33,
                                        map_path / 'bigfand.map', 0.95, 0.7, 1.65,            0.8606,
                                        # cf = 1
@@ -75,20 +85,21 @@ def main():
                         # ***************** Combustor ******************************************************
                         # fuel input
                         # Texit input, Wf guess for 1500 K is 1.1 kg/s
-                        TCombustor('combustor1',  '',  FuelControl,           3,4,   1.1 , 1500,    1, 1,
-                                                    # fuel specification examples:
-                                                    # fuel specified by LHV, HCratio, OCratio:
-                                                    None,      43031, 1.9167, 0, '', None),
+                        #  TCombustor('combustor1',  '',  FuelControl,           3,4,   1.1 , 1500,    1, 1,
+                        #                                 # fuel specification examples:
+                        #                                 # fuel specified by LHV, HCratio, OCratio:
+                        #                                 None,      43031, 1.9167, 0, '', None),
 
-                                                    # fuel specified by Fuel composition (by mass)
-                                                        # NC12H26 = Dodecane ~ jet fuel, CH4 for hydrogen
-                                                    # None,      None, None, None, 'NC12H26:1'),
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                        # 288.15,      None, None, None, 'CH4:1', None),
+                                                        # fuel specified by Fuel composition (by mass)
+                                                            # NC12H26 = Dodecane ~ jet fuel, CH4 for hydrogen
+                                                        # None,      None, None, None, 'NC12H26:1'),
+                                                        # fuel specified by Fuel temperature and Fuel composition (by mass)
+                                                            # 288.15,      None, None, None, 'CH4:1', None),
 
-                                                    # fuel mixtures
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                    # 288.15,      None, None, None, 'CH4:5, C2H6:1', None),
+                                                        # fuel mixtures
+                                                        # fuel specified by Fuel temperature and Fuel composition (by mass)
+                                                        # 288.15,      None, None, None, 'CH4:5, C2H6:1', None),
+                        combustor,
 
                         TTurbine('HPT', map_path / 'turbimap.map', None, 4,45,   2,   14000, 0.8732,       1, 0.65, 1, 'GG', None),
 
@@ -104,7 +115,7 @@ def main():
 
     # define the gas model in f_global
     fg.InitializeGas()
-    fsys.ErrorTolerance = 0.0001
+    fsys.ErrorTolerance = 1E-4
 
     fsys.VERBOSE = False  # If print performance simulation result to console
 
@@ -149,8 +160,14 @@ def main():
     for comp in fsys.system_model:
         comp.PlotMaps()
 
-    print("end of running turbofan simulation")
+    print("end of running turbofan_demo simulation")
 
 # main program start, calls main()
 if __name__ == "__main__":
     main()
+    # main((24.45 * 0.9, 24.45 * 1.1, 24.45 * 0.2 / 2, 'FN'),
+    #      'CH4:9, N2:1',
+    #      'rich_natural_gas_thrust')
+    # main((23, 25, 2, 'FN'),
+    #      'H2:1',
+    #      'hydrogen_thrust')
