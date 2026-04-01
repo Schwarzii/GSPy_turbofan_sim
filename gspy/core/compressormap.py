@@ -103,7 +103,7 @@ class TCompressorMap(TTurboMap):
             arrow_y = (arrow_tail_y + arrow_dy)
 
             n_arrow = 8
-            for i in np.arange(-1, len(arrow_x), int(len(wc) / n_arrow))[1:]:
+            for i in np.arange(-1, len(arrow_x), int(np.ceil(len(wc) / n_arrow)))[1:]:
                 self.main_plot_axis.annotate('', (arrow_x[i], arrow_y[i]), (arrow_tail_x[i], arrow_tail_y[i]),
                                              arrowprops=dict(width=0.01, headwidth=4, headlength=6,
                                                              facecolor='navy', edgecolor='navy'))
