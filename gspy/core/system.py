@@ -138,7 +138,7 @@ def Run_OD_simulation():
              # fsys.Do_Output(Mode, inputpoints[ipoint])
             solution = root(residuals,
                             states,
-                            method = 'krylov',
+                            method='krylov',
                             tol=ErrorTolerance,
                             options={'maxiter': maxiter})
                             # options={'maxiter': maxiter, 'xtol': 0.01})
@@ -249,7 +249,7 @@ def Plot_X_nY_graph(title, jpg_filename, xcol, ycollist):
         ax = axes[yaxisnr]
 
         # main line
-        ax.plot(OutputTable[xname], OutputTable[col], color=color, zorder=2)
+        ax.plot(OutputTable.loc[~dp_mask, xname], OutputTable.loc[~dp_mask, col], color=color, zorder=2)
         ax.set_ylabel(label)
 
         # screen-fixed squares at design points (only for rows where Mode == "DP")
