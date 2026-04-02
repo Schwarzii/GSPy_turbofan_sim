@@ -39,7 +39,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import multiprocessing
 import functools
+import pickle
 
+from calc_co2 import co2_rate
 
 
 def main(T_nom, fuel_info, fuelname):
@@ -57,7 +59,7 @@ def main(T_nom, fuel_info, fuelname):
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
     relmin = 0.9
     relmax = 1.1
-    steps = 2
+    steps = 5
     FuelControl = TControl('Control', '', 0.79, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
        
 
@@ -158,22 +160,41 @@ def run_simulation(fuel_tuple, t_nominal):
     return main(t_nominal, fuel_params, fuelname=fuel_name)
 
 if __name__ == "__main__":
-    tasks = list(FUEL_DICT.items())
-    worker_func = functools.partial(run_simulation, t_nominal=T_nom)
-    #filepaths.append(main(T_nom, FUEL_DICT.get(fuelchoice), fuelname=fuelchoice))
-    with multiprocessing.Pool() as pool:
-        filepaths = pool.map(worker_func, tasks)
+    if True:
+        tasks = list(FUEL_DICT.items())
+        worker_func = functools.partial(run_simulation, t_nominal=T_nom)
+        #filepaths.append(main(T_nom, FUEL_DICT.get(fuelchoice), fuelname=fuelchoice))
+        with multiprocessing.Pool() as pool:
+            filepaths = pool.map(worker_func, tasks)
+            with open("./filepaths", "wb") as file:
+                pickle.dump(filepaths, file)
+    else:
+        with open("./filepaths", "rb") as file:
+            filepaths = pickle.load(file)
 
     # Plotting
-    plt.figure()
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax2 = ax1.twinx()
     for filepath in filepaths:
+        fuel_name = filepath.stem
+        composition = FUEL_DICT.get(fuel_name)[4]
+        composition = "JET_A:1" if composition == "" else composition
+        print(composition)
+        co2_factor = co2_rate(composition)
+        print(co2_factor)
         df = pd.read_csv(filepath)
         df = df[df["Mode"] == "OD"]
-        plt.plot(df["FN"], df["WF"], label=filepath.name, marker="o")
-    
-    plt.legend()
-    plt.xlabel("Net thrust [kN]")
-    plt.ylabel("Fuel flow [kg/s]")
-    plt.grid(True)
-    plt.show()
+        df["co2"] = df["WF"] * co2_factor
+        ax1.plot(df["FN"], df["WF"], label=f"{fuel_name} (WF)", marker="o")
+        ax2.plot(df["FN"], df["co2"], label=f"{fuel_name} (CO2)", marker="x")
 
+    ax1.set_xlabel("Net thrust [kN]")
+    ax1.set_ylabel("Fuel flow [kg/s]")
+    ax2.set_ylabel("CO2 emission [kg/s]")
+    ax1.grid(True, linestyle=':', alpha=0.7)
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize='small')
+    plt.tight_layout()
+    plt.show()
