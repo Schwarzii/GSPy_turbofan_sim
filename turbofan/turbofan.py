@@ -14,6 +14,11 @@
 #   Wilfried Visser
 #   Oscar Kogenhop
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from gspy.core import sys_global as fg
 from gspy.core import system as fsys
 from gspy.core import utils as fu
@@ -31,7 +36,6 @@ from gspy.core.exhaustnozzle import TExhaustNozzle
 
 import os
 import matplotlib.pyplot as plt
-from pathlib import Path
 
     # IMPORTANT NOTE TO THIS MODEL FILE
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -41,7 +45,7 @@ from pathlib import Path
     # stall margin exceedance etc.
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-def main():
+def main(fueltemp, T_nom):
     # Paths
     project_dir = Path(__file__).resolve().parent
     map_path = project_dir / "maps"
@@ -54,7 +58,17 @@ def main():
 
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
-    FuelControl = TControl('Control', '', 1.11, 1600, 1100, -50, None)
+    relmin = 0.9
+    relmax = 1.1
+    steps = 10
+    FuelControl = TControl('Control', '', 0.79, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
+    fuelchoice = "H2"
+    FUEL_DICT = {
+        "jet": [None, 43031, 1.9167, 0, '', None],
+        "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1', None],
+        "H2": [fueltemp, None, None, None, 'H2:1', None],
+    }
+    
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
@@ -75,20 +89,7 @@ def main():
                         # ***************** Combustor ******************************************************
                         # fuel input
                         # Texit input, Wf guess for 1500 K is 1.1 kg/s
-                        TCombustor('combustor1',  '',  FuelControl,           3,4,   1.1 , 1500,    1, 1,
-                                                    # fuel specification examples:
-                                                    # fuel specified by LHV, HCratio, OCratio:
-                                                    None,      43031, 1.9167, 0, '', None),
-
-                                                    # fuel specified by Fuel composition (by mass)
-                                                        # NC12H26 = Dodecane ~ jet fuel, CH4 for hydrogen
-                                                    # None,      None, None, None, 'NC12H26:1'),
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                        # 288.15,      None, None, None, 'CH4:1', None),
-
-                                                    # fuel mixtures
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                    # 288.15,      None, None, None, 'CH4:5, C2H6:1', None),
+                        TCombustor('combustor1',  '',  FuelControl, 3,4, 1.1, 1500, 1, 1, *FUEL_DICT.get(fuelchoice)),
 
                         TTurbine('HPT', map_path / 'turbimap.map', None, 4,45,   2,   14000, 0.8732,       1, 0.65, 1, 'GG', None),
 
@@ -151,4 +152,5 @@ def main():
 
 # main program start, calls main()
 if __name__ == "__main__":
-    main()
+    
+    main(273, 24.45)

@@ -161,6 +161,7 @@ def Run_OD_simulation():
         Do_Output(inputpoints[ipoint], ExceptionError)
         failedcount = failedcount + 1
         print(f"OD simulation: exception error: {e}")
+        raise ValueError("Wrong inputs")
 
     print(f"{successcount} OD points calculated, {failedcount} failed")
 

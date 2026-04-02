@@ -13,6 +13,10 @@
 # Authors
 #   Wilfried Visser
 #   Oscar Kogenhop
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspy.core import sys_global as fg
 from gspy.core import system as fsys
@@ -46,7 +50,7 @@ def main():
 
     # create a control (controlling all inputs to the system model)
     # direct fuel flow input
-    N1_control = TControl('N1_control', '', 1.11, 100, 40, -5, 'N1%')
+    N1_control = TControl('N1_control', '', 1.11, 200000, 100000, -50000, 'FN')
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
