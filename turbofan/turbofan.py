@@ -36,16 +36,13 @@ from gspy.core.exhaustnozzle import TExhaustNozzle
 
 import os
 import matplotlib.pyplot as plt
+import pandas as pd
+import multiprocessing
+import functools
 
-    # IMPORTANT NOTE TO THIS MODEL FILE
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # note that this model is only to serve as example and does not represent an actual gas turbine design,
-    # nor an optimized design. The component maps are just sample maps scaled to the model design point.
-    # The maps are entirely unrealistic and therefore result in unrealistic, unstable off design performance,
-    # stall margin exceedance etc.
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-def main(fueltemp, T_nom):
+
+def main(T_nom, fuel_info, fuelname):
     # Paths
     project_dir = Path(__file__).resolve().parent
     map_path = project_dir / "maps"
@@ -60,15 +57,9 @@ def main(fueltemp, T_nom):
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
     relmin = 0.9
     relmax = 1.1
-    steps = 10
+    steps = 2
     FuelControl = TControl('Control', '', 0.79, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
-    fuelchoice = "H2"
-    FUEL_DICT = {
-        "jet": [None, 43031, 1.9167, 0, '', None],
-        "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1', None],
-        "H2": [fueltemp, None, None, None, 'H2:1', None],
-    }
-    
+       
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
@@ -89,7 +80,7 @@ def main(fueltemp, T_nom):
                         # ***************** Combustor ******************************************************
                         # fuel input
                         # Texit input, Wf guess for 1500 K is 1.1 kg/s
-                        TCombustor('combustor1',  '',  FuelControl, 3,4, 1.1, 1500, 1, 1, *FUEL_DICT.get(fuelchoice)),
+                        TCombustor('combustor1',  '',  FuelControl, 3,4, 1.1, 1500, 1, 1, *fuel_info),
 
                         TTurbine('HPT', map_path / 'turbimap.map', None, 4,45,   2,   14000, 0.8732,       1, 0.65, 1, 'GG', None),
 
@@ -130,27 +121,59 @@ def main(fueltemp, T_nom):
     #  output results
     outputbasename = os.path.splitext(os.path.basename(__file__))[0]
     # export OutputTable to CSV
-    fsys.OutputToCSV(fg.output_path, outputbasename + ".csv")
+    fsys.OutputToCSV(fg.output_path, f"{fuelname}.csv")
 
     # plot nY vs X parameter
-    fsys.Plot_X_nY_graph('Performance vs N1 [%] at Alt 10000m, Ma 0.8 (DP at ISA SL)',
+    """fsys.Plot_X_nY_graph('Performance vs FN at Alt 10000m, Ma 0.8 (DP at ISA SL)',
                             os.path.join(fg.output_path, outputbasename + "_1.jpg"),
                             # common X parameter column name with label
-                            ("N1%",           "Fan speed [%]"),
+                            ("FN",           "Net thrust [kN]"),
                             # 4 Y paramaeter column names with labels and color
-                            [   ("T4",              "TIT [K]",                  "blue"),
-                                ("T45",             "EGT [K]",                  "blue"),
-                                ("W2",              "Inlet mass flow [kg/s]",   "blue"),
-                                ("Wf_combustor1",   "Fuel flow [kg/s]",         "blue"),
+                            [   ("Wf_combustor1",   "Fuel flow [kg/s]",         "blue"),
                                 ("FN",              "Net thrust [kN]",          "blue")            ])
-
+    """
      # Create plots with operating lines if available
-    for comp in fsys.system_model:
-        comp.PlotMaps()
+    # for comp in fsys.system_model:
+    #     comp.PlotMaps()
 
     print("end of running turbofan simulation")
+    return fg.output_path / f"{fuelname}.csv"
 
 # main program start, calls main()
+# Constants
+T_nom = 24.45 # kN
+fueltemp = 273 # TODO: Ask what this should be
+FUEL_DICT = {
+    "jet": [None, 43031, 1.9167, 0, '', None],
+    "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1', None],
+    "H2": [fueltemp, None, None, None, 'H2:1', None],
+}
+
+def run_simulation(fuel_tuple, t_nominal):
+    """
+    because main is stateful ahhhhh
+    """
+    fuel_name, fuel_params = fuel_tuple
+    # This calls your original main function
+    return main(t_nominal, fuel_params, fuelname=fuel_name)
+
 if __name__ == "__main__":
+    tasks = list(FUEL_DICT.items())
+    worker_func = functools.partial(run_simulation, t_nominal=T_nom)
+    #filepaths.append(main(T_nom, FUEL_DICT.get(fuelchoice), fuelname=fuelchoice))
+    with multiprocessing.Pool() as pool:
+        filepaths = pool.map(worker_func, tasks)
+
+    # Plotting
+    plt.figure()
+    for filepath in filepaths:
+        df = pd.read_csv(filepath)
+        df = df[df["Mode"] == "OD"]
+        plt.plot(df["FN"], df["WF"], label=filepath.name, marker="o")
     
-    main(273, 24.45)
+    plt.legend()
+    plt.xlabel("Net thrust [kN]")
+    plt.ylabel("Fuel flow [kg/s]")
+    plt.grid(True)
+    plt.show()
+
