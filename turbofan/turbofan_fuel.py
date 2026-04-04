@@ -20,12 +20,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspy.core import sys_global as FG
-from gspy.core import system as fsys
-from gspy.core import utils as fu
 
 from gspy.core.control import TControl
 from gspy.core.ambient import TAmbient
-from gspy.core.shaft import TShaft
 from gspy.core.inlet import TInlet
 from gspy.core.fan import TFan
 from gspy.core.compressor import TCompressor
@@ -36,7 +33,9 @@ from gspy.core.exhaustnozzle import TExhaustNozzle
 
 import os
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
+import io
+from contextlib import redirect_stdout
 
     # IMPORTANT NOTE TO THIS MODEL FILE
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -46,8 +45,10 @@ from pathlib import Path
     # stall margin exceedance etc.
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-def main():
-    # Paths
+def setup(controller):
+    """Setup the experiment (equivalent to turbofan.py, except for configurable control)."""
+    from gspy.core import system as fsys
+
     project_dir = Path(__file__).resolve().parent
     map_path = project_dir / "maps"
     FG.output_path = project_dir / "output"
@@ -59,101 +60,110 @@ def main():
 
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
-    FuelControl = TControl('Control', '', 1.11, 1600, 1100, -50, None)
+    
 
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
-
-                        FuelControl,
-
+                        controller,
                         TInlet('Inlet1',          '', None,           0,2,   337, 1    ),
-
-                        # for turbofan, note that fan has 2 GasOut outputs
                         TFan('FAN_BST',map_path / 'bigfanc.map', 2, 25, 21,   1,   4880, 0.8696, 5.3, 0.95, 0.7, 2.33,
                                        map_path / 'bigfand.map', 0.95, 0.7, 1.65,            0.8606,
                                        # cf = 1
                                        1),
-
-                        # always start with the components following the 1st GasOut object
                         TCompressor('HPC',map_path / 'compmap.map', None, 25,3,   2,   14000, 0.8433, 1, 0.8, 10.9, 'GG', None),
-
-                        # ***************** Combustor ******************************************************
-                        # fuel input
-                        # Texit input, Wf guess for 1500 K is 1.1 kg/s
-                        TCombustor('combustor1',  '',  FuelControl,           3,4,   1.1 , 1500,    1, 1,
-                                                    # fuel specification examples:
-                                                    # fuel specified by LHV, HCratio, OCratio:
-                                                    None,      43031, 1.9167, 0, '', None),
-
-                                                    # fuel specified by Fuel composition (by mass)
-                                                        # NC12H26 = Dodecane ~ jet fuel, CH4 for hydrogen
-                                                    # None,      None, None, None, 'NC12H26:1'),
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                        # 288.15,      None, None, None, 'CH4:1', None),
-
-                                                    # fuel mixtures
-                                                    # fuel specified by Fuel temperature and Fuel composition (by mass)
-                                                    # 288.15,      None, None, None, 'CH4:5, C2H6:1', None),
-
+                        TCombustor('combustor1',  '',  FuelControl, 3,4, 1.1 , 1500, 1, 1, None, 43031, 1.9167, 0, '', None),
                         TTurbine('HPT', map_path / 'turbimap.map', None, 4,45,   2,   14000, 0.8732,       1, 0.65, 1, 'GG', None),
-
                         TTurbine('LPT', map_path / 'turbimap.map', None, 45,5,   1,   4480, 0.8682,       1, 0.7, 1, 'GG', None),
-
-
                         TDuct('Exhduct_hot',      '', None,               5,7,   1.0                 ),
                         TExhaustNozzle('HotNozzle',     '', None,           7,8,9, 1, 1, 1),
-
-                        # now add the list with components following the 2nd fan GasOut (i.e. the bypass duct)
                         TDuct('Exhduct_cold',      '', None,               21,23,   1.0                 ),
                         TExhaustNozzle('ColdNozzle',      '', None,           23,18,19, 1, 1, 1)]
-
+    
     # define the gas model in f_global
     FG.InitializeGas()
     fsys.ErrorTolerance = 0.0001
 
+    return fsys
+
+def DP(system):
+    """Perform design point calculations."""
     # run the system model Design Point (DP) calculation
-    fsys.Mode = 'DP'
+    system.Mode = 'DP'
     print("Design point (DP) results")
     print("=========================")
     # set DP ambient/flight conditions
-    fsys.Ambient.SetConditions('DP', 0, 0, 0, None, None)
-    fsys.Run_DP_simulation()
+    system.Ambient.SetConditions('DP', 0, 0, 0, None, None)
+    system.Run_DP_simulation()
 
-    # run the Off-Design (OD) simulation, to find the steady state operating points for all fsys.inputpoints
-    fsys.Mode = 'OD'
-    fsys.inputpoints = FuelControl.Get_OD_inputpoints()
+    return system
+
+def OD(system, fuelparams, start_wf_guess):
+    """Perform off-design calculations."""
+    system.Mode = 'OD'
+    system.inputpoints = FuelControl.Get_OD_inputpoints()
     print("\nOff-design (OD) results")
     print("=======================")
     # set OD ambient/flight conditions; note that Ambient.SetConditions must be implemented inside RunODsimulation if a sweep of operating/inlet
     # conditions is desired
     # typical cruise conditions:
-    fsys.Ambient.SetConditions('OD', 10000, 0.8, 0, None, None)
+    system.components['combustor1'].SetFuel(*fuelparams)
+    system.components['Control'].DP_inputvalue = start_wf_guess
+    system.Ambient.SetConditions('OD', 10000, 0.8, 0, None, None)
     # Run OD simulation
-    fsys.Run_OD_simulation()
+    system.Run_OD_simulation()
 
-    #  output results
-    outputbasename = os.path.splitext(os.path.basename(__file__))[0]
+    return system
+
+def generate_output(system, fuel_name):
+    """Generate simulation outputs."""
+    # Calculate exhaust massflow
+    mass_dict = get_exhaust_masses(system)
+    system.output_dict["CO2"] = mass_dict["CO2"]
+    
     # export OutputTable to CSV
-    fsys.OutputToCSV(FG.output_path, outputbasename + ".csv")
+    system.OutputToCSV(FG.output_path, fuel_name + ".csv")
 
-    # plot nY vs X parameter
-    fsys.Plot_X_nY_graph('Performance vs N1 [%] at Alt 10000m, Ma 0.8 (DP at ISA SL)',
-                            os.path.join(FG.output_path, outputbasename + "_1.jpg"),
-                            # common X parameter column name with label
-                            ("N1%",           "Fan speed [%]"),
-                            # 4 Y paramaeter column names with labels and color
-                            [   ("T4",              "TIT [K]",                  "blue"),
-                                ("T45",             "EGT [K]",                  "blue"),
-                                ("W2",              "Inlet mass flow [kg/s]",   "blue"),
-                                ("Wf_combustor1",   "Fuel flow [kg/s]",         "blue"),
-                                ("FN",              "Net thrust [kN]",          "blue")            ])
+def get_exhaust_masses(system):
+    """Post process exhaust massflow of all species."""
+    f_hot = system.components['HotNozzle'].GasOut.mass
+    f_cold = system.components['HotNozzle'].GasOut.mass
+    hot_dict = system.components['HotNozzle'].GasOut.mass_fraction_dict()
+    cold_dict = system.components['ColdNozzle'].GasOut.mass_fraction_dict()
+    all_species = set(hot_dict) | set(cold_dict)
+    return {k: hot_dict.get(k, 0) * f_hot + cold_dict.get(k, 0) * f_cold for k in all_species}
 
-     # Create plots with operating lines if available
-    for comp in fsys.system_model:
-        comp.PlotMaps()
 
-    print("end of running turbofan simulation")
+# Thrust sweep params (sweep goes from T_nom*relmin to T_nom*relmax in "steps" steps)
+relmin = 0.9
+relmax = 1.1
+steps = 5
+T_nom = 24.45 # kN
 
-# main program start, calls main()
+# Fuel params
+fueltemp = 273 # Assumed based on instructor's input
+assumed_od_wf = 0.9 # Initial guess for OD calculations. Adjust to converge for all fuels.
+
+# All fuel compositions to test (additional ones can be defined here)
+FUEL_DICT = {
+    "jet": [None, 43031, 1.9167, 0, ''],
+    "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1'],
+    "H2": [fueltemp, None, None, None, 'H2:1'],
+}
+
 if __name__ == "__main__":
-    main()
+
+    # Define controller. DP_inputvalue MUST be 1.11 to match the reference system.
+    FuelControl = TControl('Control', '', 1.11, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
+
+    # Setup the system and run design point calculation.
+    system_blueprint = setup(FuelControl)
+    sized_system = DP(system_blueprint)
+
+    # Run the off-design calculation for all fuels
+    for fuel_name, fuelparams in FUEL_DICT.items():
+        try:
+            result_system = OD(sized_system, fuelparams, assumed_od_wf)
+            generate_output(result_system, fuel_name)
+        except Exception as e:
+            print(e)
+            print(fuel_name)
