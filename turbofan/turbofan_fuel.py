@@ -116,7 +116,7 @@ def OD(system, fuelparams, start_wf_guess):
 
 def generate_output(system, fuel_name):
     """Generate simulation outputs."""
-    # Calculate exhaust massflow
+    # Calculate exhaust massflow (possible to get other gases here)
     mass_dict = get_exhaust_masses(system)
     system.output_dict["CO2"] = mass_dict["CO2"]
     
@@ -126,7 +126,7 @@ def generate_output(system, fuel_name):
 def get_exhaust_masses(system):
     """Post process exhaust massflow of all species."""
     f_hot = system.components['HotNozzle'].GasOut.mass
-    f_cold = system.components['HotNozzle'].GasOut.mass
+    f_cold = system.components['ColdNozzle'].GasOut.mass
     hot_dict = system.components['HotNozzle'].GasOut.mass_fraction_dict()
     cold_dict = system.components['ColdNozzle'].GasOut.mass_fraction_dict()
     all_species = set(hot_dict) | set(cold_dict)
@@ -137,10 +137,10 @@ def get_exhaust_masses(system):
 relmin = 0.9
 relmax = 1.1
 steps = 5
-T_nom = 24.45 # kN
+T_nom = 24.45 # [kN]
 
 # Fuel params
-fueltemp = 273 # Assumed based on instructor's input
+fueltemp = 273 # [K] Assumed based on instructor's input
 assumed_od_wf = 0.9 # Initial guess for OD calculations. Adjust to converge for all fuels.
 
 # All fuel compositions to test (additional ones can be defined here)
