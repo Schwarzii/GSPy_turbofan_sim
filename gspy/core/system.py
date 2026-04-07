@@ -33,6 +33,8 @@ output_dict = {}
 system_model = [] # system model component list
 shaft_list = []
 
+mass_dict = {}
+
 inputpoints = np.array([], dtype=float)
 points_output_interval = 1
 
@@ -127,41 +129,41 @@ def Run_OD_simulation():
         # the residuals are the errors returned by Do_Run
         return Do_Run(inputpoints[ipoint], states)
 
-    try:
-        # start with all states 1 and errors 0
-        reinit_states_and_errors()
-        maxiter=50
-        successcount = 0
-        failedcount = 0
-        for ipoint in inputpoints:
-            # solution returns the residual errors after conversion (shoudl be within the tolerance 'tol')
-             # fsys.Do_Output(Mode, inputpoints[ipoint])
-            solution = root(residuals,
-                            states,
-                            method = 'krylov',
-                            tol=ErrorTolerance,
-                            options={'maxiter': maxiter})
-                            # options={'maxiter': maxiter, 'xtol': 0.01})
-                            # options={'maxiter': maxiter, 'line_search': 'wolfe'})
-            if ipoint % points_output_interval == 0:
-                Do_Output(inputpoints[ipoint], NoError if solution.success else ConvergenceError)
-            if solution.success:
-                successcount = successcount + 1
-            else:
-                failedcount = failedcount + 1
-                print(f"Could not find a solution for point {ipoint} with max {maxiter} iterations")
-            # for debug
-            # wf = fu.get_component_object_by_name(turbojet, 'combustor1').Wf
-            # wfpoint = np.array([inputpoints[ipoint], wf], dtype=float)
-            # point_wf_states_array = np.concatenate((wfpoint, fsys.states))
-            # savedstates = np.vstack([savedstates, point_wf_states_array])
+    # try:
+    # start with all states 1 and errors 0
+    reinit_states_and_errors()
+    maxiter=50
+    successcount = 0
+    failedcount = 0
+    for ipoint in inputpoints:
+        # solution returns the residual errors after conversion (shoudl be within the tolerance 'tol')
+            # fsys.Do_Output(Mode, inputpoints[ipoint])
+        solution = root(residuals,
+                        states,
+                        method = 'krylov',
+                        tol=ErrorTolerance,
+                        options={'maxiter': maxiter})
+                        # options={'maxiter': maxiter, 'xtol': 0.01})
+                        # options={'maxiter': maxiter, 'line_search': 'wolfe'})
+        if ipoint % points_output_interval == 0:
+            Do_Output(inputpoints[ipoint], NoError if solution.success else ConvergenceError)
+        if solution.success:
+            successcount = successcount + 1
+        else:
+            failedcount = failedcount + 1
+            print(f"Could not find a solution for point {ipoint} with max {maxiter} iterations")
         # for debug
-        # solution = root(residuals, [ 0.55198737,  0.71696654,  0.76224776,  0.85820746], method='krylov')
-    except Exception as e:
+        # wf = fu.get_component_object_by_name(turbojet, 'combustor1').Wf
+        # wfpoint = np.array([inputpoints[ipoint], wf], dtype=float)
+        # point_wf_states_array = np.concatenate((wfpoint, fsys.states))
+        # savedstates = np.vstack([savedstates, point_wf_states_array])
+    # for debug
+    # solution = root(residuals, [ 0.55198737,  0.71696654,  0.76224776,  0.85820746], method='krylov')
+    """except Exception as e:
         Do_Output(inputpoints[ipoint], ExceptionError)
         failedcount = failedcount + 1
         print(f"OD simulation: exception error: {e}")
-        raise ValueError("Wrong inputs")
+        raise ValueError("Wrong inputs")"""
 
     print(f"{successcount} OD points calculated, {failedcount} failed")
 
@@ -179,6 +181,7 @@ def PrintPerformance(Mode, PointTime):
  #  1.1 WV
 def AddSystemOutputToDict(Mode):
     FN = FG - RD
+
     output_dict["FG"] = FG
     output_dict["FN"] = FN
     output_dict["RD"] = RD

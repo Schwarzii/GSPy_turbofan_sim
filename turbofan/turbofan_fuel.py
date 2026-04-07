@@ -31,11 +31,13 @@ from gspy.core.turbine import TTurbine
 from gspy.core.duct import TDuct
 from gspy.core.exhaustnozzle import TExhaustNozzle
 
-import os
+from ExhaustLogger import ExhaustLogger
+
 import matplotlib.pyplot as plt
 import numpy as np
-import io
 from contextlib import redirect_stdout
+import pandas as pd
+from multiprocessing import Pool
 
     # IMPORTANT NOTE TO THIS MODEL FILE
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -61,7 +63,7 @@ def setup(controller):
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
     
-
+    logger = ExhaustLogger("ExhaustLogger")
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
                         controller,
@@ -77,7 +79,8 @@ def setup(controller):
                         TDuct('Exhduct_hot',      '', None,               5,7,   1.0                 ),
                         TExhaustNozzle('HotNozzle',     '', None,           7,8,9, 1, 1, 1),
                         TDuct('Exhduct_cold',      '', None,               21,23,   1.0                 ),
-                        TExhaustNozzle('ColdNozzle',      '', None,           23,18,19, 1, 1, 1)]
+                        TExhaustNozzle('ColdNozzle',      '', None,           23,18,19, 1, 1, 1),
+                        logger]
     
     # define the gas model in f_global
     FG.InitializeGas()
@@ -114,24 +117,31 @@ def OD(system, fuelparams, start_wf_guess):
 
     return system
 
-def generate_output(system, fuel_name):
+def generate_output(system, fuel_name, top_n=10):
     """Generate simulation outputs."""
-    # Calculate exhaust massflow (possible to get other gases here)
-    mass_dict = get_exhaust_masses(system)
-    system.output_dict["CO2"] = mass_dict["CO2"]
     
-    # export OutputTable to CSV
     system.OutputToCSV(FG.output_path, fuel_name + ".csv")
+    
+    # create additional output listing the top top_n emitted gases and their flowrate
+    # This will be for the last OD datapaoint for the given fuel
+    mass_dict = system.components["ExhaustLogger"].get_exhaust_masses()
+    s = pd.Series(mass_dict).sort_values(ascending=False).head(top_n)
+    s.to_csv(FG.output_path / f"{fuel_name}_top{top_n}_species.csv")
 
-def get_exhaust_masses(system):
-    """Post process exhaust massflow of all species."""
-    f_hot = system.components['HotNozzle'].GasOut.mass
-    f_cold = system.components['ColdNozzle'].GasOut.mass
-    hot_dict = system.components['HotNozzle'].GasOut.mass_fraction_dict()
-    cold_dict = system.components['ColdNozzle'].GasOut.mass_fraction_dict()
-    all_species = set(hot_dict) | set(cold_dict)
-    return {k: hot_dict.get(k, 0) * f_hot + cold_dict.get(k, 0) * f_cold for k in all_species}
 
+def process_fuel(args):
+    """Worker function to process a single fuel in a separate process."""
+    fuel_name, fuelparams, assumed_od_wf = args
+    
+    # Setup and run DP for this process (this is the same regardless of fuel)
+    system_blueprint = setup(FuelControl)
+    sized_system = DP(system_blueprint)
+    
+    # Run off-design for this fuel
+    result_system = OD(sized_system, fuelparams, assumed_od_wf)
+    
+    # Generate output
+    generate_output(result_system, fuel_name)
 
 # Thrust sweep params (sweep goes from T_nom*relmin to T_nom*relmax in "steps" steps)
 relmin = 0.9
@@ -141,29 +151,27 @@ T_nom = 24.45 # [kN]
 
 # Fuel params
 fueltemp = 273 # [K] Assumed based on instructor's input
-assumed_od_wf = 0.9 # Initial guess for OD calculations. Adjust to converge for all fuels.
+assumed_od_wf = 0.5 # Initial guess for OD calculations. Adjust to converge for all fuels.
 
 # All fuel compositions to test (additional ones can be defined here)
 FUEL_DICT = {
+    "H2": [fueltemp, None, None, None, 'H2:1'],
     "jet": [None, 43031, 1.9167, 0, ''],
     "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1'],
-    "H2": [fueltemp, None, None, None, 'H2:1'],
 }
+
+FuelControl = TControl('Control', '', 1.11, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
 
 if __name__ == "__main__":
 
     # Define controller. DP_inputvalue MUST be 1.11 to match the reference system.
-    FuelControl = TControl('Control', '', 1.11, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")
-
-    # Setup the system and run design point calculation.
-    system_blueprint = setup(FuelControl)
-    sized_system = DP(system_blueprint)
-
-    # Run the off-design calculation for all fuels
-    for fuel_name, fuelparams in FUEL_DICT.items():
-        try:
-            result_system = OD(sized_system, fuelparams, assumed_od_wf)
-            generate_output(result_system, fuel_name)
-        except Exception as e:
-            print(e)
-            print(fuel_name)
+    
+    # Prepare fuel data for multiprocessing
+    fuel_data = [
+        (fuel_name, fuelparams, assumed_od_wf)
+        for fuel_name, fuelparams in FUEL_DICT.items()
+    ]
+    
+    # Process fuels in parallel using multiprocessing
+    with Pool() as pool:
+        pool.map(process_fuel, fuel_data)
