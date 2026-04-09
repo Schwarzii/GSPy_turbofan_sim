@@ -144,7 +144,7 @@ class TTurbineMap(TTurboMap):
                     fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
                     linewidth=1.5, linestyle='solid', color='navy')
 
-        self.map_figure.savefig(self.map_figure_pathname)
+        self.map_figure.savefig(self.map_figure_pathname.parent / 'map' / self.map_figure_pathname.name)
 
     def PlotDualMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False):
         super().PlotDualMap(use_scaled_map, do_plot_design_point, do_plot_series)
@@ -196,4 +196,4 @@ class TTurbineMap(TTurboMap):
             self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
 
         # self.dual_map_figure.tight_layout()
-        self.dual_map_figure.savefig(self.map_figure_pathname)
+        self.dual_map_figure.savefig(self.map_figure_pathname.parent / 'map_dual' / self.map_figure_pathname.name)

@@ -225,6 +225,12 @@ class TTurboMap(TMap):
 
         self.set_scaled_arrays(use_scaled_map)
 
+        if not (map_data_dir:=self.map_figure_pathname.parent / 'map_data').exists():
+            map_data_dir.mkdir()
+
+        if not (map_op_dir := self.map_figure_pathname.parent / 'map').exists():
+            map_op_dir.mkdir()
+
     # This plot consists of two subplots
     #  1.5 new eta_name parameter so we can also plot fan maps
     # def PlotDualMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
@@ -257,5 +263,8 @@ class TTurboMap(TMap):
         self.dual_map_figure.suptitle(map_title)
 
         self.set_scaled_arrays(use_scaled_map)
+
+        if not (map_dual_dir := self.map_figure_pathname.parent / 'map_dual').exists():
+            map_dual_dir.mkdir()
 
 

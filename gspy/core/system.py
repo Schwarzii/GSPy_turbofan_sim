@@ -281,4 +281,4 @@ def Plot_X_nY_graph(title, jpg_filename, xcol, ycollist):
     plt.show()
     # xyplotfilename = os.path.join(output_directory, os.path.splitext(os.path.basename(__file__))[0]) + ".jpg"
     fig.savefig(jpg_filename)
-    print("x-4y plot saved in " + jpg_filename)
+    print("x-4y plot saved")

@@ -108,16 +108,16 @@ class TCompressorMap(TTurboMap):
                                              arrowprops=dict(width=0.01, headwidth=4, headlength=6,
                                                              facecolor='navy', edgecolor='navy'))
             surge_line_points = np.vstack([self.compSlWcArrayValues, self.compSlPRArrayValues[0]])
-            np.save(f'{self.map_figure_pathname.parent}/{self.name}_surge', surge_line_points)
+            np.save(self.map_figure_pathname.parent/'map_data'/f'{self.name}_surge', surge_line_points)
             op_line_points = np.vstack([wc, pr])
-            np.save(f'{self.map_figure_pathname.parent}/{self.name}_op_line', op_line_points)
+            np.save(self.map_figure_pathname.parent/'map_data'/f'{self.name}_op_line', op_line_points)
         plt.tight_layout()
 
         # Save plot handle for further processing
-        with open(f"{self.map_figure_pathname.parent}/{self.name}_plot.pickle", "wb") as f:
+        with open(self.map_figure_pathname.parent/'map_data'/f'{self.name}_plot.pickle', "wb+") as f:
             pickle.dump(self.map_figure, f)
 
-        self.map_figure.savefig(self.map_figure_pathname, dpi=100)
+        self.map_figure.savefig(self.map_figure_pathname.parent / 'map' / self.map_figure_pathname.name, dpi=100)
 
     def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
         super().PlotDualMap(eta_name, use_scaled_map, do_plot_design_point, do_plot_series)
@@ -174,4 +174,4 @@ class TCompressorMap(TTurboMap):
             self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
 
         # self.dual_map_figure.tight_layout()
-        self.dual_map_figure.savefig(self.map_figure_pathname)
+        self.dual_map_figure.savefig(self.map_figure_pathname.parent / 'map_dual' / self.map_figure_pathname.name)
