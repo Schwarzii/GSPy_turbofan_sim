@@ -15,7 +15,6 @@
 
 import numpy as np
 from gspy.core.turbomap import TTurboMap
-import gspy.core.system as fsys
 
 class TTurbineMap(TTurboMap):
     def __init__(self, host_component, name, MapFileName, OL_xcol, OL_Ycol, ShaftString, Ncmapdes, Betamapdes):
@@ -30,21 +29,6 @@ class TTurbineMap(TTurboMap):
         # tbd : read stall line
         return amaptype, amaptitle, amapfile
 
-    # 1.6 WV obsolete now, see below
-    # def ReadPRlimits(self, mapfile, keyword):
-    #     line = mapfile.readline()
-    #     while keyword not in line.upper():
-    #         line = mapfile.readline()
-    #     line = mapfile.readline()
-    #     items = line.split()
-    #     nccount1= float(items[0])%1
-    #     nccount = round(nccount1*1000)-1
-    #     nc_values = np.empty(nccount, dtype=float)
-    #     line = mapfile.readline()
-    #     # items = line.split()
-    #     prlimits_array = np.array(list(map(float, line.split()[1:])))
-    #     return nc_values, prlimits_array
-
     def ReadMap(self, filename):              # Abstract method, defined by convention only
         super().ReadMap(filename)
 
@@ -53,14 +37,14 @@ class TTurbineMap(TTurboMap):
         # read PR min values
         # self.nc_values, self.prmin_array = self.ReadPRlimits(self.mapfile, 'MIN PRESSURE RATIO')
         # self.nc_values, self.prmax_array = self.ReadPRlimits(self.mapfile, 'MAX PRESSURE RATIO')
-        dummy_value, self.nc_values, self.prmin_array = self.ReadNcBetaCrossTable(self.mapfile, 'MIN PRESSURE RATIO')
-        dummy_value, self.nc_values, self.prmax_array = self.ReadNcBetaCrossTable(self.mapfile, 'MAX PRESSURE RATIO')
+        dummy_value, self.nc_values, self.prmin_array = self.ReadNcBetaCrossTable(self.map_file, 'MIN PRESSURE RATIO')
+        dummy_value, self.nc_values, self.prmax_array = self.ReadNcBetaCrossTable(self.map_file, 'MAX PRESSURE RATIO')
         # convert from 2-D array with 1 row to a 1-D array
         self.prmin_array = self.prmin_array[0]
         self.prmax_array = self.prmax_array[0]
 
-        self.nc_values, self.beta_values, self.wc_array = self.ReadNcBetaCrossTable(self.mapfile, 'MASS FLOW')
-        self.nc_values, self.beta_values, self.eta_array = self.ReadNcBetaCrossTable(self.mapfile, 'EFFICIENCY')
+        self.nc_values, self.beta_values, self.wc_array = self.ReadNcBetaCrossTable(self.map_file, 'MASS FLOW')
+        self.nc_values, self.beta_values, self.eta_array = self.ReadNcBetaCrossTable(self.map_file, 'EFFICIENCY')
 
         # now calculate PR_value table:
         # Unlike with the compressor, for the turbine PR values can be calculated
@@ -77,29 +61,35 @@ class TTurbineMap(TTurboMap):
         # self.get_map_pr = RegularGridInterpolator((self.nc_values, self.beta_values), self.pr_array, bounds_error=False, fill_value=None)
         self.DefineInterpolationFunctions()
 
-    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
-        super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series)
+    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True, nc_labels_use_scaling = True, beta_lines = True, beta_label_side = 'end'):
+        super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series, nc_labels_use_scaling)
 
         if self.LegacyMap:
             # Plot Wc-PR
             for index, NcValue in enumerate(self.NcArrayValues):
                 self.main_plot_axis.plot(self.PRArrayValues[index], self.WcArrayValues[index], linewidth=0.25, linestyle='dashed', color='black', label=str(NcValue))
+            if beta_lines:
+                self._plot_beta_lines(self.main_plot_axis, self.PRArrayValues, self.WcArrayValues, beta_label_side=beta_label_side)
+
             self.main_plot_axis.set_ylabel('Corected massflow')
             self.main_plot_axis.set_xlabel('Pressure Ratio')
 
             # Contours
-            self.main_plot_axis.contourf(self.PRArrayValues,self.WcArrayValues,np.transpose(self.EtaArrayValues), 14 ,cmap='RdYlGn',alpha=0.3)
-            CS = self.main_plot_axis.contour(self.PRArrayValues,self.WcArrayValues,np.transpose(self.EtaArrayValues),10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
+            # 1.6.0.7 W. Visser bug fix: must NOT transpose self.EtaArrayValues here
+            # self.main_plot_axis.contourf(self.PRArrayValues,self.WcArrayValues,np.transpose(self.EtaArrayValues), 14 ,cmap='RdYlGn',alpha=0.3)
+            # CS = self.main_plot_axis.contour(self.PRArrayValues,self.WcArrayValues,np.transpose(self.EtaArrayValues),10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
+            self.main_plot_axis.contourf(self.PRArrayValues,self.WcArrayValues,self.EtaArrayValues, 14 ,cmap='RdYlGn',alpha=0.3)
+            CS = self.main_plot_axis.contour(self.PRArrayValues,self.WcArrayValues,self.EtaArrayValues,10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
             self.main_plot_axis.clabel(CS, fontsize=7, inline=True)
 
             # Design point
             if do_plot_design_point:
-                self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+                self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
 
             # Operating line
             if do_plot_series:
                 # Plotting PR - Wc
-                self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+                self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
         else:
             # Plot Nc*Wc - PR
             Nc_times_WcArrayValues = self.WcArrayValues.copy()
@@ -111,43 +101,53 @@ class TTurbineMap(TTurboMap):
                 # Add NcValue text at the last point of the curve
                 ymin, ymax = self.main_plot_axis.get_ylim()
                 # self.main_plot_axis.text(x[-1], y[-1], f'{NcValue:.1f}', fontsize=8, ha='left', va='center')
-                if index == 0:
-                    text_label = f'Nc = {NcValue:.1f}'
-                else:
-                    text_label = f'{NcValue:.1f}'
+                # 1.6.0.6
+                # if index == 0:
+                #     text_label = f'Nc = {NcValue:.1f}'
+                # else:
+                #     text_label = f'{NcValue:.1f}'
+                label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
                 self.main_plot_axis.text(
-                    x[-1], y[-1]-((ymax-ymin)/8), text_label,
+                    # 1.6.0.6
+                    # x[-1], y[-1]-((ymax-ymin)/8), text_label,
+                    x[-1], y[-1]-((ymax-ymin)/8), label_txt,
                     fontsize=8, ha='left', va='bottom', rotation=-90
                 )
+            if beta_lines:
+                self._plot_beta_lines(self.main_plot_axis, Nc_times_WcArrayValues, self.PRArrayValues, beta_label_side=beta_label_side)
+
             self.main_plot_axis.set_xlabel('Corected mass flow * Corrected speed')
             self.main_plot_axis.set_ylabel('Pressure Ratio')
 
             # Contours
-            self.main_plot_axis.contourf(Nc_times_WcArrayValues,self.PRArrayValues,np.transpose(self.EtaArrayValues), 14 ,cmap='RdYlGn',alpha=0.3)
-            CS = self.main_plot_axis.contour(Nc_times_WcArrayValues,self.PRArrayValues,np.transpose(self.EtaArrayValues),10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
+            # 1.6.0.7 W. Visser bug fix: must NOT transpose self.EtaArrayValues here
+            # self.main_plot_axis.contourf(Nc_times_WcArrayValues,self.PRArrayValues,np.transpose(self.EtaArrayValues), 14 ,cmap='RdYlGn',alpha=0.3)
+            # CS = self.main_plot_axis.contour(Nc_times_WcArrayValues,self.PRArrayValues,np.transpose(self.EtaArrayValues),10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
+            self.main_plot_axis.contourf(Nc_times_WcArrayValues,self.PRArrayValues,self.EtaArrayValues, 14 ,cmap='RdYlGn',alpha=0.3)
+            CS = self.main_plot_axis.contour(Nc_times_WcArrayValues,self.PRArrayValues,self.EtaArrayValues,10,colors='slategrey',alpha=0.3,levels = np.linspace(0.64, 0.84, 11))
             self.main_plot_axis.clabel(CS, fontsize=7, inline=True)
 
             # Design point
             if do_plot_design_point:
                 self.main_plot_axis.plot(
-                    np.multiply(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(),
-                                fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Nc_comp_param].to_numpy()),
-                    fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(),
+                    np.multiply(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(),
+                                self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Nc_comp_param].to_numpy()),
+                    self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(),
                     markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
 
             # Operating line
             if do_plot_series:
                 # Plot PR-Nc*Wc
                 self.main_plot_axis.plot(
-                    np.multiply(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),
-                                fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Nc_comp_param].to_numpy()),
-                    fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
+                    np.multiply(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),
+                                self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Nc_comp_param].to_numpy()),
+                    self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
                     linewidth=1.5, linestyle='solid', color='navy')
 
-        self.map_figure.savefig(self.map_figure_pathname.parent / 'map' / self.map_figure_pathname.name)
+        self.map_figure.savefig(self.map_figure_file_path)
 
-    def PlotDualMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False):
-        super().PlotDualMap(use_scaled_map, do_plot_design_point, do_plot_series)
+    def PlotDualMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False, nc_labels_use_scaling = True, beta_lines = True, beta_label_side = 'end'):
+        super().PlotDualMap(use_scaled_map, do_plot_design_point, do_plot_series, nc_labels_use_scaling)
 
         # Plot Pr-Eta top subplot
         for index, NcValue in enumerate(self.NcArrayValues):
@@ -157,7 +157,7 @@ class TTurbineMap(TTurboMap):
             x = np.asarray(self.PRArrayValues[index])
             y = np.asarray(self.EtaArrayValues[index])
             # First line gets "Nc=\n<value>", others just "<value>"
-            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+            label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
 
             # Optional: stagger vertical offset a bit to reduce collisions when ends align
             dy = (index % 2) * 6 - 3  # -3, +3, -3, +3...
@@ -165,6 +165,9 @@ class TTurbineMap(TTurboMap):
                 self.main_plot_axis, x, y,
                 label_txt, which="last", color="black", dx=4, dy=dy, fontsize=7
             )
+        if beta_lines:
+            self._plot_beta_lines(self.main_plot_axis, self.PRArrayValues, self.EtaArrayValues, beta_label_side=beta_label_side)
+
         self.main_plot_axis.set_ylabel('Efficiency')
         # self.main_plot_axis.set_xlabel('Pressure Ratio')
 
@@ -174,26 +177,29 @@ class TTurbineMap(TTurboMap):
             # 1.6.0.4
             x = np.asarray(self.PRArrayValues[index])
             y = np.asarray(self.WcArrayValues[index])
-            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+            label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
             dy = (index % 2) * 6 - 3
             self._annotate_line_end(
                 self.secondary_plot_axis, x, y,
                 label_txt, which="last", color="black", dx=4, dy=dy, fontsize=7
             )
 
+        if beta_lines:
+            self._plot_beta_lines(self.secondary_plot_axis, self.PRArrayValues, self.WcArrayValues, beta_label_side=beta_label_side)
+
         self.secondary_plot_axis.set_ylabel('Corected mass flow')
         self.secondary_plot_axis.set_xlabel('Pressure Ratio')
 
         # Design point
         if do_plot_design_point:
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')]['Eta_is_' + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
-            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'DP')]['Eta_is_' + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.secondary_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
 
         # Operating line
         if do_plot_series:
             # Plotting PR - Wc
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')]['Eta_is_' + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
-            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')]['Eta_is_' + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.secondary_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
 
         # self.dual_map_figure.tight_layout()
-        self.dual_map_figure.savefig(self.map_figure_pathname.parent / 'map_dual' / self.map_figure_pathname.name)
+        self.dual_map_figure.savefig(self.map_figure_file_path)

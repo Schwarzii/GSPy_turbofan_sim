@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 import cantera as ct
 import gspy.core.sys_global as fg
-import gspy.core.system as fsys
 from gspy.core.base_component import TComponent
 
 class TAMcontrol(TComponent):
@@ -78,8 +77,8 @@ class TAMcontrol(TComponent):
         else:
             # set ambient conditions
             for ambientcondpar in self.ambientparnamelist:
-                # fsys.Ambient.__setattr__(ambientcondpar, self.am_input.at[PointTime, ambientcondpar])
-                setattr(fsys.Ambient, ambientcondpar, self.am_input.at[PointTime, ambientcondpar])
+                # fsys.ambient.__setattr__(ambientcondpar, self.am_input.at[PointTime, ambientcondpar])
+                setattr(fsys.ambient, ambientcondpar, self.am_input.at[PointTime, ambientcondpar])
 
             # set power setting
             psetcomp, psetpar = self.powersettingcomppar
@@ -97,6 +96,7 @@ class TAMcontrol(TComponent):
             for i, (compmap, SFpar) in enumerate(self.mapmod_comps_pars_list, start=0):
                 setattr(compmap, SFpar, fsys.states[self.first_map_mod_stateindex+i])
 
+    # note that anything calculated in PostRun will not end up in the output_dict !
     def PostRun(self, Mode, PointTime):
         # super().PostRun(Mode, PointTime)
         if Mode == 'DP':

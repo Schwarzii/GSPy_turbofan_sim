@@ -16,14 +16,16 @@
 import cantera as ct
 import aerocalc as ac     # !!!! install with "pip install aero-calc", see https://www.kilohotel.com/python/aerocalc/html/
 from gspy.core.base_component import TComponent
-import gspy.core.sys_global as fg
-import gspy.core.system as fsys
+# import gspy.core.sys_global as fg
+import gspy.core.constants as c
 
 class TAmbient(TComponent):
-    def __init__(self, name, stationnr, Altitude, Macha, dTs, Psa, Tsa):    # Constructor of the class
-        super().__init__(name, '', None)
-        self.stationnr = stationnr
+    def __init__(self, owner, name, stationnr, Altitude, Macha, dTs, Psa, Tsa):    # Constructor of the class
+        super().__init__(owner, name, '', None)
+        self.station_nr = stationnr
         self.SetConditions('DP', Altitude, Macha, dTs, Psa, Tsa)
+        # 2.0.0.0 make sure the system model can directly access the ambient component (must be only a single Ambient component)
+        owner.ambient = self
 
     def SetConditions(self, Mode, Altitude, Macha, dTs, Psa, Tsa):
         if Mode == 'DP':
@@ -49,8 +51,9 @@ class TAmbient(TComponent):
             # create separate Cantera phase object for Ambient, to be used by components if needed
             # self.Gas_Ambient = ct.Solution('jetsurf.yaml')
             # create Cantera quantity object for Ambient (mass = 1 per default)
-            self.Gas_Ambient = ct.Quantity(fg.gas)
-            fsys.gaspath_conditions[self.stationnr] = self.Gas_Ambient
+            # this quantity is then further copied along the gaspath in the system model
+            self.Gas_Ambient = ct.Quantity(self.owner.gas)
+            self.owner.gaspath_conditions[self.station_nr] = self.Gas_Ambient
         if self.Tsa == None:
             # Tsa not defined, use standard atmosphere
             self.Tsa = ac.std_atm.alt2temp(self.Altitude, alt_units='m', temp_units='K')
@@ -63,14 +66,25 @@ class TAmbient(TComponent):
         self.Tta = self.Tsa * ( 1 + 0.2 * self.Macha**2)
         self.Pta = self.Psa * ((self.Tta/self.Tsa)**3.5)
         # set values in the Gas_Ambient phase object conditions
-        self.Gas_Ambient.TPY = self.Tta, self.Pta, fg.s_air_composition_mass
+        self.Gas_Ambient.TPY = self.Tta, self.Pta, c.s_air_composition_mass
         self.V = self.Macha * ac.std_atm.temp2speed_of_sound(self.Tsa, speed_units = 'm/s', temp_units = 'K')
 
-    #  1.1 WV
-    def AddOutputToDict(self, Mode):
-        fsys.output_dict["Alt"] = self.Altitude
-        fsys.output_dict["Tsa"] = self.Tsa
-        fsys.output_dict["Psa"] = self.Psa
-        fsys.output_dict["Tta"] = self.Tta
-        fsys.output_dict["Pta"] = self.Pta
-        fsys.output_dict["Macha"] = self.Macha
+     # 2.0.0.0
+    def get_outputs(self):
+        #  outputs = super().get_outputs()
+        s = self.station_nr
+
+        return {
+            "Alt": self.Altitude,
+            f"Ts{s}": self.Tsa,
+            f"Ps{s}": self.Psa,
+            f"Tt{s}": self.Tta,
+            f"Pt{s}": self.Pta,
+            f"Mach{s}": self.Macha,
+        }
+
+    def get_station_nr(self):
+        return self.station_nr
+
+    def set_station_nr(self, station_nr):
+        self.station_nr = station_nr

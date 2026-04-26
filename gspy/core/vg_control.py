@@ -16,7 +16,6 @@
 import numpy as np
 import cantera as ct
 import gspy.core.sys_global as fg
-import gspy.core.system as fsys
 from gspy.core.base_component import TComponent
 
 class TVG_Control(TComponent):
@@ -33,7 +32,7 @@ class TVG_Control(TComponent):
 
         # the next line merely is an example schedule....
         # adapt to you own liking...
-        self.outputvalue = (1 - inputvalue/self.DP_inputvalue) * 300
+        self.outputvalue = (1 - inputvalue/self.DP_inputvalue) * 580
 
         self.inputvalue = inputvalue
         return self.outputvalue

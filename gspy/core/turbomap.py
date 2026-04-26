@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from gspy.core.map import TMap
 from scipy.interpolate import RegularGridInterpolator
-from gspy.core import sys_global as fg
+# from gspy.core import sys_global as fg
 
 class TTurboMap(TMap):
     def __init__(self, host_component, name, MapFileName, OL_xcol, OL_Ycol, ShaftString, Ncmapdes, Betamapdes):    # Constructor of the class
@@ -51,11 +51,11 @@ class TTurboMap(TMap):
         # Map paramter naming
         # 1.1 WV bug fix
         # self.Nc_comp_param = f"Nc{self.ShaftString}"
-        self.Nc_comp_param = f"Nc{self.host_component.stationin}"
+        self.Nc_comp_param = f"Nc{self.host_component.station_in}"
         if self.OL_xcol != '':
             self.Wc_in_param = self.OL_xcol
         else:
-            self.Wc_in_param = 'Wc' + str(self.host_component.stationin)
+            self.Wc_in_param = 'Wc' + str(self.host_component.station_in)
         if self.OL_ycol != '':
             self.PR_comp_param = self.OL_ycol
         else:
@@ -95,13 +95,44 @@ class TTurboMap(TMap):
             val_txt = f"{nc_value:.0f}"
         return f"Nc=\n{val_txt}" if with_prefix else val_txt
 
+
+
+    @staticmethod
+    def _get_nc_label_value(nc_value, sfmap_nc=1.0, use_scaling=True):
+        if use_scaling:
+            return nc_value / sfmap_nc
+        return nc_value
+
+    @staticmethod
+    def _format_beta_label(beta_value, with_prefix=False):
+        val_txt = f"{beta_value:.3f}".rstrip('0').rstrip('.')
+        return f"β={val_txt}" if with_prefix else val_txt
+
+    def _plot_beta_lines(self, ax, x_array, y_array, beta_label_side="end"):
+        if not hasattr(self, "beta_values") or self.beta_values is None:
+            return
+        which = "first" if str(beta_label_side).lower() == "start" else "last"
+        x_array = np.asarray(x_array)
+        y_array = np.asarray(y_array)
+        n_beta = len(self.beta_values)
+        for index, beta_value in enumerate(np.asarray(self.beta_values, dtype=float)):
+            x = x_array[:, index]
+            y = y_array[:, index]
+            ax.plot(x, y, linewidth=0.25, linestyle='dotted', color='dimgray', zorder=2)
+            label_txt = self._format_beta_label(beta_value, with_prefix=(index == (n_beta -1 )))
+            dy = (index % 2) * 6 - 3
+            self._annotate_line_end(
+                ax, x, y,
+                label_txt, which=which, color='dimgray', dx=4, dy=dy, fontsize=7
+            )
+
     def ReadMap(self, filename):              # Abstract method, defined by convention only
         amaptype, amaptitle, amapfile = super().ReadMap(filename)
         # with self.file:
-        if self.mapfile is not None:
-            line = self.mapfile.readline()
+        if self.map_file is not None:
+            line = self.map_file.readline()
             while 'REYNOLDS' not in line.upper():
-                line = self.mapfile.readline()
+                line = self.map_file.readline()
             RNI = np.empty(2, dtype=float)
             f_RNI = np.empty(2, dtype=float)
             items = line.split()
@@ -154,8 +185,8 @@ class TTurboMap(TMap):
         return nc_values, beta_values, fval_array
 
     def ReadMapAndGetScaling(self, Ncdes, Wcdes, PRdes, Etades):
-        self.ReadMap(self.MapFileName)
-        if self.mapfile is not None:
+        self.ReadMap(self.map_filename)
+        if self.map_file is not None:
             # get map scaling parameters
             # for Nc
             self.SFmap_Nc = Ncdes / self.Ncmapdes
@@ -210,7 +241,7 @@ class TTurboMap(TMap):
             self.EtaArrayValues = self.eta_array
 
     # Map plotting routine
-    def PlotMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False):
+    def PlotMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False, nc_labels_use_scaling = True):
         super().PlotMap()
         # Set map title
         map_title = self.name
@@ -225,22 +256,24 @@ class TTurboMap(TMap):
 
         self.set_scaled_arrays(use_scaled_map)
 
-        if not (map_data_dir:=self.map_figure_pathname.parent / 'map_data').exists():
+        if not (map_data_dir:=self.map_figure_dir_path / 'map_data').exists():
             map_data_dir.mkdir()
 
-        if not (map_op_dir := self.map_figure_pathname.parent / 'map').exists():
+        if not (map_op_dir := self.map_figure_dir_path / 'map').exists():
             map_op_dir.mkdir()
 
     # This plot consists of two subplots
     #  1.5 new eta_name parameter so we can also plot fan maps
     # def PlotDualMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
-    def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = False, do_plot_design_point = False, do_plot_series = False):
+    def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = False, do_plot_design_point = False, do_plot_series = False, nc_labels_use_scaling = True):
         # Store plot under a different name, override map file name
-        # reuse the map_figure_pathname and map size class parameters
+        # reuse the map_figure_file_path and map size class parameters
         # 1.4
-        # self.map_figure_pathname = './output/' + self.name + '_dual' + '.jpg'
+        # self.map_figure_file_path = './output/' + self.name + '_dual' + '.jpg'
         # 1.6.0.3 reverted
-        self.map_figure_pathname = fg.output_path / (self.name + '_dual' + '.jpg')
+        # self.map_figure_file_path = self.out fu.output_dir_path / (self.name + '_dual' + '.jpg')
+        # override default
+        self.map_figure_file_path = self.map_figure_dir_path / (self.name + '_dual' + '.jpg')
 
         # Create the subplot graph for a split turbomachinary plot
         self.dual_map_figure, (self.main_plot_axis, self.secondary_plot_axis) = plt.subplots(
@@ -264,7 +297,7 @@ class TTurboMap(TMap):
 
         self.set_scaled_arrays(use_scaled_map)
 
-        if not (map_dual_dir := self.map_figure_pathname.parent / 'map_dual').exists():
+        if not (map_dual_dir := self.map_figure_dir_path / 'map_dual').exists():
             map_dual_dir.mkdir()
 
 

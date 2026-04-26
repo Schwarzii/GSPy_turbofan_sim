@@ -17,8 +17,8 @@ import math
 from abc import ABC, abstractmethod
 from bisect import bisect_left
 import cantera as ct
-import gspy.core.sys_global as fg
-import gspy.core.system as fsys
+# import gspy.core.sys_global as fg
+import gspy.core.utils as fu
 import gspy.core.shaft as fshaft
 import gspy.core.turbomap as TMap
 from gspy.core.gaspath import TGaspath
@@ -26,13 +26,13 @@ from pathlib import Path
 from gspy.core.turbomap import TTurboMap
 
 class TTurboComponent(TGaspath):
-    def __init__(self, name, MapFileName_or_dict, ControlComponent, stationin, stationout, ShaftNr,
+    def __init__(self, owner, name, map_filename_or_dict, ControlComponent, station_in, station_out, ShaftNr,
                  Ndes, Etades,
                  Ncmapdes, Betamapdes):
-        super().__init__(name, MapFileName_or_dict, ControlComponent, stationin, stationout)
+        super().__init__(owner, name, map_filename_or_dict, ControlComponent, station_in, station_out)
 
-        self.GasIn = None
-        self.GasOut = None
+        self.gas_in = None
+        self.gas_out = None
         self.ShaftNr = ShaftNr
 
         self.Ndes = Ndes
@@ -56,19 +56,21 @@ class TTurboComponent(TGaspath):
         self.Polytropic_Eta = 0  # default eta is assumed isentropic, if self.Polytropic_Eta == 1, polytropic
 
         self.PW = None
+        # 1.6.0.8
+        self.DHW = None
 
         # 1.6 Wilfried Visser, to accomodate multi-map functionality for variable geometry
         # VGparvalue is set from outside (manually of via TControl component) determining the maps in the MapFileNames list to be used for interpolation
         # type-dependent behavior for MapFileNames (renamed here from 'MapFileName' in TGaspath)
-        if isinstance(MapFileName_or_dict, dict):
+        if isinstance(map_filename_or_dict, dict):
             # MapFileName_or_dict holds VGparvaluedes in element 'design_angle' and a list of mapfilename, VGpasvalues in "maps"
             # MapFileNames is list of tuples : Map file path, VGparvalue (e.g. VSV / VIGV angle, VBV position)
-            self.vg_angle_des = MapFileName_or_dict['design_angle']           # tuple[0] holds the VGpasvalue in the design point (for scaling map in DP calculation)
+            self.vg_angle_des = map_filename_or_dict['design_angle']           # tuple[0] holds the VGpasvalue in the design point (for scaling map in DP calculation)
             self.vg_angle =self.vg_angle_des
             self.MapFileName = None
 
             self.maps_by_angle: dict[float, TTurboMap] = {}
-            maps_dict = MapFileName_or_dict["maps"]
+            maps_dict = map_filename_or_dict["maps"]
             for angle in sorted(maps_dict):
                 fn = Path(maps_dict[angle])
                 if not fn.exists():
@@ -89,10 +91,10 @@ class TTurboComponent(TGaspath):
                     "VGparvaluedes does not match any of the VGpasvalue's in the MapFileNames list")
 
         # single map from single map file path
-        elif isinstance(MapFileName_or_dict, (str, Path)):
+        elif isinstance(map_filename_or_dict, (str, Path)):
             # MapFileName_or_dict is just a single map file name/path
             # Normalize to Path internally (best practice)
-            self.MapFileName = Path(MapFileName_or_dict)
+            self.MapFileName = Path(map_filename_or_dict)
             self.map = self.CreateMap(self.MapFileName, ShaftNr, Ncmapdes, Betamapdes)
 
         else:
@@ -100,8 +102,8 @@ class TTurboComponent(TGaspath):
                 "MapFileNames must be a str, pathlib.Path, or a tuple with 0) VGparvaluedesigm, and 1) list of (VGparvalue, MapFileName)"
             )
 
-        if all(shaft.ShaftNr != ShaftNr for shaft in fsys.shaft_list):
-            fsys.shaft_list.append(fshaft.TShaft(ShaftNr, name + ' shaft ' + str(ShaftNr)) )
+        if all(shaft.ShaftNr != ShaftNr for shaft in self.owner.shaft_list):
+            self.owner.shaft_list.append(fshaft.TShaft(ShaftNr, name + ' shaft ' + str(ShaftNr)) )
 
     # 1.6 WV
     # @abstractmethod  not abstract: not implemented in TFan child class
@@ -121,7 +123,7 @@ class TTurboComponent(TGaspath):
             for angle, tmap in self.maps_by_angle.items():
                 # only scale the map (i.e. the design point map)
                 if not (tmap is self.map):
-                    tmap.ReadMap(tmap.MapFileName)
+                    tmap.ReadMap(tmap.map_filename)
                     tmap.SetScaling(SFnc, SFwc, SFpr, SFeta)
 
     # 1.6 WV
@@ -155,55 +157,64 @@ class TTurboComponent(TGaspath):
         if self.map != None:
             self.map.PlotDualMap(use_scaled_map = True, do_plot_design_point = True, do_plot_series = True)
             # 1.4
-            # print(self.name + " map (dual) with operating curve saved in " + self.map.map_figure_pathname)
-            print(f"{self.name} map (dual) with operating curve saved in {self.map.map_figure_pathname}")
+            # print(self.name + " map (dual) with operating curve saved in " + self.map.map_figure_file_path)
+            print(f"{self.name} map (dual) with operating curve saved in {self.map.map_figure_file_path}")
 
     def Run(self, Mode, PointTime):
         super().Run(Mode, PointTime)
         if Mode == 'DP':
-            self.Ncdes = self.Ndes / fg.GetRotorspeedCorrectionFactor(self.GasIn)
+            self.Ncdes = self.Ndes / fu.GetRotorspeedCorrectionFactor(self.gas_in)
             self.Nc = self.Ncdes
             self.Eta = self.Etades
-            self.shaft = fsys.get_shaft(self.ShaftNr)
+            self.shaft = self.owner.get_shaft(self.ShaftNr)
             self.vg_angle = self.vg_angle_des
 
-    def PrintPerformance(self, Mode, PointTime):
-        super().PrintPerformance(Mode, PointTime)
+    #  2.0
+    def print_map_data(self, map, mode):
+        if map.Ncmap!= None:
+            print(f"\tMap Corr Rotor speed : {map.Ncmap:.4f} rpm")
+        if map.Wcmapdes!= None:
+            print(f"\tDP Map Corr mass flow : {map.Wcmapdes:.3f} kg/s")
+        if map.Wcmap!= None:
+            print(f"\tMap Corr mass flow : {map.Wcmap:.3f} kg/s")
+        if map.PRmap!= None:
+            print(f"\tPR map : {map.PRmap:.4f}")
+        if map.Etamap!= None:
+            print(f"\tEta map : {map.Etamap:.4f}")
+        if mode == 'DP':
+            print(f"\tSFmap Nc : {map.SFmap_Nc :.4f}")
+            print(f"\tSFmap Wc : {map.SFmap_Wc :.4f}")
+            print(f"\tSFmap PR : {map.SFmap_PR :.4f}")
+            print(f"\tSFmap Eta: {map.SFmap_Eta :.4f}")
+
+    def PrintPerformance(self, mode, PointTime):
+        super().PrintPerformance(mode, PointTime)
         print(f"\tRotor speed  : {self.N:.0f} rpm")
         print(f"\tCorr Rotor speed : {self.Nc:.0f} rpm")
         if self.map != None:
-            if self.map.Ncmap!= None:
-                print(f"\tMap Corr Rotor speed : {self.map.Ncmap:.4f} rpm")
-            if self.map.Wcmapdes!= None:
-                print(f"\tDP Map Corr mass flow : {self.map.Wcmapdes:.3f} kg/s")
-            if self.map.Wcmap!= None:
-                print(f"\tMap Corr mass flow : {self.map.Wcmap:.3f} kg/s")
-            # if self.W!= None:
-            #     print(f"\tMap mass flow : {self.W:.3f} kg/s")
-            if self.map.PRmap!= None:
-                print(f"\tPR map : {self.map.PRmap:.4f}")
-            if self.map.Etamap!= None:
-                print(f"\tEta map : {self.map.Etamap:.4f}")
+            self.print_map_data(self.map, mode)
 
-        #  1.5
         if self.Etades != None:
             print(f"\tEta des : {self.Etades:.4f}")
             print(f"\tEta     : {self.Eta:.4f}")
 
         print(f"\tPW : {self.PW:.1f}")
 
-    #  1.1 WV
-    def AddOutputToDict(self, Mode):
-        super().AddOutputToDict(Mode)
-        fsys.output_dict[f"N{self.ShaftNr}"] = self.N
-        fsys.output_dict[f"Nc{self.stationin}"] = self.Nc
-        fsys.output_dict[f"N{self.ShaftNr}%"] = self.N/self.Ndes*100
-        fsys.output_dict[f"Nc{self.stationin}%"] = self.Nc/self.Ncdes*100
+    # 2.0.0.0
+    def get_outputs(self):
+        out = super().get_outputs()
+
+        out[f"N{self.ShaftNr}"] = self.N
+        out[f"Nc{self.station_in}"] = self.Nc
+        out[f"N{self.ShaftNr}%"] = self.N/self.Ndes*100
+        out[f"Nc{self.station_in}%"] = self.Nc/self.Ncdes*100
 
         # 1.5
         if self.Eta != None:
-            fsys.output_dict["Eta_is_"+self.name] = self.Eta
+            out["Eta_is_"+self.name] = self.Eta
         # 1.6 WV
         if self.vg_angle_des !=None:
-            fsys.output_dict["vg_angle_"+self.name] = self.vg_angle
-        fsys.output_dict["PW_"+self.name] = self.PW
+            out["vg_angle_"+self.name] = self.vg_angle
+        out["PW_"+self.name] = self.PW
+
+        return out

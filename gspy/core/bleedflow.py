@@ -16,12 +16,10 @@
 import numpy as np
 import cantera as ct
 from gspy.core.gaspath import TGaspath
-import gspy.core.sys_global as fg
-import gspy.core.system as fsys
 
 class TBleedFlow(TGaspath):
-    def __init__(self, name, MapFileName, ControlComponent, stationin, stationout, bleednumber, bleedfractiondes, dPfactor):    # Constructor of the class
-        super().__init__(name, MapFileName, ControlComponent, stationin, stationout)
+    def __init__(self, owner, name, map_filename, control_component, station_in, station_out, bleednumber, bleedfractiondes, dPfactor):    # Constructor of the class
+        super().__init__(owner, name, map_filename, control_component, station_in, station_out)
         self.bleednumber = bleednumber
         self.bleedfractiondes = bleedfractiondes
         self.bleedfraction = bleedfractiondes

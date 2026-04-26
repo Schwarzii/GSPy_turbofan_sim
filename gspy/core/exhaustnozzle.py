@@ -19,16 +19,15 @@ import cantera as ct
 import gspy.core.utils as fu
 from scipy.optimize import root_scalar
 from gspy.core.gaspath import TGaspath
-import gspy.core.sys_global as fg
-import gspy.core.system as fsys
+# import gspy.core.sys_global as fg
 
 class TExhaustNozzle(TGaspath):
-    def __init__(self, name, MapFileName, ControlComponent, stationin, stationthroat, stationout, CXdes, CVdes, CDdes):    # Constructor of the class
+    def __init__(self, owner, name, MapFileName, ControlComponent, station_in, stationthroat, station_out, CXdes, CVdes, CDdes):    # Constructor of the class
         # CXdes, CVdes, CDdes are for propelling nozzle
         # PRdes = diffuser pressure loss (Psout/Ptin) in case of a (divergent) exhaust diffuser
         # If PRdes <> None then a divergent diffuser expansion is calculated, with PRdes as the diffuser
         # pressure loss. PRdes must be < 1. Psout then determines the diffuser exit area A9.
-        super().__init__(name, MapFileName, ControlComponent, stationin, stationout)
+        super().__init__(owner, name, MapFileName, ControlComponent, station_in, station_out)
         self.stationthroat = stationthroat
         self.CXdes = CXdes
         self.CVdes = CVdes
@@ -37,11 +36,11 @@ class TExhaustNozzle(TGaspath):
     def Run(self, Mode, PointTime):
         super().Run(Mode, PointTime)
         # add nozzle throat station
-        self.GasThroat = ct.Quantity(self.GasIn.phase, mass = self.GasIn.mass)
-        Sin = self.GasIn.entropy_mass
-        Hin = self.GasIn.enthalpy_mass
-        Pin = self.GasIn.P
-        Pout = fsys.Ambient.Psa
+        self.GasThroat = ct.Quantity(self.gas_in.phase, mass = self.gas_in.mass)
+        Sin = self.gas_in.entropy_mass
+        Hin = self.gas_in.enthalpy_mass
+        Pin = self.gas_in.P
+        Pout = self.owner.ambient.Psa
         # propelling nozzle, expansion flow
         # PR is nozzle PR Pout/Pin, only calculated (not given)
         # # v1.2
@@ -49,8 +48,8 @@ class TExhaustNozzle(TGaspath):
         self.PR = Pin/Pout
         if Mode == 'DP':
             self.PRdes = self.PR
-            # Vthroat_is, self.Tthroat = fu.calculate_exit_velocity(self.GasOut.phase, self.PR)
-            Vthroat_is, self.Tthroat = fu.calculate_exit_velocity(self.GasOut.phase, self.PR)
+            # Vthroat_is, self.Tthroat = fu.calculate_exit_velocity(self.gas_out.phase, self.PR)
+            Vthroat_is, self.Tthroat = fu.calculate_exit_velocity(self.gas_out.phase, self.PR)
             # try full expansion to Pout
             self.GasThroat.TP = self.Tthroat, Pout
             self.Mthroat = Vthroat_is / self.GasThroat.phase.sound_speed
@@ -59,7 +58,11 @@ class TExhaustNozzle(TGaspath):
 
                 # Function to find the pressure for Mach 1
                 def mach_number_difference(exit_pressure):
-                    self.GasThroat.SP = Sin, float(exit_pressure)  # Set state at the given pressure
+
+                    # 1.6.0.5 make sure Pout becomes a single value
+                    # self.GasThroat.SP = Sin, float(exit_pressure)  # Set state at the given pressure
+                    self.GasThroat.SP = Sin, float(np.asarray(exit_pressure).squeeze())  # Set state at the given pressure
+
                     local_speed_of_sound = self.GasThroat.sound_speed
                     velocity = (2 * (Hin - self.GasThroat.enthalpy_mass))**0.5
                     mach_number = velocity / local_speed_of_sound
@@ -81,39 +84,39 @@ class TExhaustNozzle(TGaspath):
                 self.Vthroat = Vthroat_is
             self.Tthroat = self.GasThroat.T
             # exit flow error
-            fsys.errors = np.append(fsys.errors, 0)
-            self.ierror_w = fsys.errors.size - 1
+            self.owner.errors = np.append(self.owner.errors, 0)
+            self.ierror_w = self.owner.errors.size - 1
             if self.Vthroat <= 0:
                 self.Vthroat = 0.001  # always assume a minimal flow velocity: 0.001 will result in a theoretical
                                     # very large exhaust area
-            self.Athroat_des = self.GasThroat.mass / self.GasThroat.phase.density / self.Vthroat
+            self.Athroat_des = fu.scalar(self.GasThroat.mass) / self.GasThroat.phase.density / self.Vthroat
             self.Athroat = self.Athroat_des
             # 1.301 now apply CV
             self.Vthroat = self.Vthroat * self.CVdes
         else:
             # Off-design calculation
             self.Athroat = self.Athroat_des # fixed nozzle are still here
-            self.Pthroat, self.Tthroat, Vthroat_is, massflow = fu.calculate_expansion_to_A(self.GasIn.phase, Pin/Pout, self.Athroat)
+            self.Pthroat, self.Tthroat, Vthroat_is, massflow = fu.calculate_expansion_to_A(self.gas_in.phase, Pin/Pout, self.Athroat)
             self.GasThroat.TP = self.Tthroat, self.Pthroat
             self.Vthroat = Vthroat_is * self.CVdes
-            fsys.errors[self.ierror_w] = (self.GasIn.mass - massflow) / self.GasInDes.mass
+            self.owner.errors[self.ierror_w] = (fu.scalar(self.gas_in.mass) - massflow) / fu.scalar(self.gas_inDes.mass)
             # 1.301 use Vthroat_is for Mach number
             # self.Mthroat = self.Vthroat / self.GasThroat.phase.sound_speed
             self.Mthroat = Vthroat_is / self.GasThroat.phase.sound_speed
-        self.GasOut.TP = self.Tthroat, Pout # assume no further expansion
-        self.FG = self.CXdes * (self.GasOut.mass * self.Vthroat + self.Athroat*(self.Pthroat-Pout)) / 1000 # kN
+        self.gas_out.TP = self.Tthroat, Pout # assume no further expansion
+        self.FG = self.CXdes * (fu.scalar(self.gas_out.mass) * self.Vthroat + self.Athroat*(self.Pthroat-Pout)) / 1000 # kN
         # add gross thrust to system level thrust (note that multiple propelling nozzles may exist)
-        fsys.FG = fsys.FG + self.FG
+        self.owner.FG = self.owner.FG + self.FG
         self.Athroat_geom = self.Athroat / self.CDdes
-        fsys.gaspath_conditions[self.stationthroat] = self.GasThroat
-        return self.GasOut
+        self.owner.gaspath_conditions[self.stationthroat] = self.GasThroat
+        return self.gas_out
 
 
     def PrintPerformance(self, Mode, PointTime):
         super().PrintPerformance(Mode, PointTime)
         # Print and return the results
-        print(f"\t\tExit static temperature: {self.GasOut.T:.1f} K")
-        print(f"\t\tExit static pressure: {self.GasOut.P:.0f} Pa")
+        print(f"\t\tExit static temperature: {self.gas_out.T:.1f} K")
+        print(f"\t\tExit static pressure: {self.gas_out.P:.0f} Pa")
         print(f"\t\tExit velocity: {self.Vthroat:.2f} m/s")
         if Mode == 'DP':
             print(f"\t\tThroat area (DP): {self.Athroat_des:.4f} m2")
@@ -121,16 +124,22 @@ class TExhaustNozzle(TGaspath):
         print(f"\t\tThroat static pressure: {self.Pthroat:.0f} Pa")
         print(f"\tGross thrust: {self.FG:.2f} kN")
 
-    #  1.1 WV
-    def AddOutputToDict(self, Mode):
-        super().AddOutputToDict(Mode)
-        fsys.output_dict[f"T{self.stationthroat}"]  = self.Tthroat
-        fsys.output_dict[f"P{self.stationthroat}"]  = self.Pthroat
-        fsys.output_dict[f"V{self.stationthroat}"]  = self.Vthroat
-        fsys.output_dict[f"Mach{self.stationthroat}"]  = self.Mthroat
-        fsys.output_dict[f"T{self.stationout}"]  = self.GasOut.T
-        fsys.output_dict[f"P{self.stationout}"]  = self.GasOut.P
-        fsys.output_dict[f"A{self.stationthroat}"]  = self.Athroat
-        fsys.output_dict[f"A{self.stationthroat}_geom"]  = self.Athroat_geom
-        fsys.output_dict["FG_"+self.name]  = self.FG
+    # 2.0.0.0
+    def get_outputs(self):
+        out = super().get_outputs()
+
+        sthr = self.stationthroat
+        sout = self.station_out
+
+        out[f"T{sthr}"]  = self.Tthroat
+        out[f"P{sthr}"]  = self.Pthroat
+        out[f"V{sthr}"]  = self.Vthroat
+        out[f"Mach{sthr}"]  = self.Mthroat
+        out[f"T{sout}"]  = self.gas_out.T
+        out[f"P{sout}"]  = self.gas_out.P
+        out[f"A{sthr}"]  = self.Athroat
+        out[f"A{sthr}_geom"]  = self.Athroat_geom
+        out["FG_"+self.name]  = self.FG
+
+        return out
 

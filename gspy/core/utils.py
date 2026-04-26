@@ -13,11 +13,12 @@
 # Authors
 #   Wilfried Visser
 
+import math
 import numpy as np
 from math import log, exp
 from scipy.optimize import root, root_scalar
 import cantera as ct
-from gspy.core.gaspath import TGaspath as gaspath
+import gspy.core.constants as c
 
 atomweightC = 12.010914
 molemassCO2 = 44.0098
@@ -26,6 +27,15 @@ molemassO2 = 31.9988
 atomweightH = 1.0079832
 atomweightN = 14
 MM_NO2 = 46.00554
+
+# functions for corrected rotor speed Nc and mass flow Wc
+# divide N by GetRotorspeedCorrectionFactor to get Nc corrected
+def GetRotorspeedCorrectionFactor(gas: ct.Quantity):
+    return math.sqrt(gas.T/c.T_std)
+
+# multiply W by GetFlowCorrectionFactor to get Wc corrected
+def GetFlowCorrectionFactor(gas: ct.Quantity):
+    return math.sqrt(gas.T/c.T_std) / (gas.P/c.P_std)
 
 def set_enthalpy(gas, target_enthalpy):
     def equation(Titer):
@@ -80,7 +90,10 @@ def calculate_expansion_to_A(gas, pressure_ratio, A):
         # exit_pressure = gas.P / pressure_ratio
         # keep entropy S constant
         def throat_H_error(Ps_throat):
-            gas.SP = stagnation_entropy, Ps_throat  # Isentropic expansion to exit pressure
+            # 1.6.0.5
+            # gas.SP = stagnation_entropy, Ps_throat  # Isentropic expansion to exit pressure
+            gas.SP = stagnation_entropy, float(np.asarray(Ps_throat).squeeze())  # Isentropic expansion to exit pressure
+
             dh = stagnation_enthalpy - gas.enthalpy_mass
             # allow backwards flow during iteration (avoiding complex number for velocity)
             if dh < 0:
@@ -113,32 +126,26 @@ def exit_T_and_enthalpy_for_pressure_ratio(gas, target_PR, eta_is) :
     gas.HP = final_enthalpy, Pend
     return gas.T, gas.enthalpy_mass
 
-def get_component_object_by_name(component_objects, aname):
-    return next((obj for obj in component_objects if obj.name == aname), None)
-
-def get_gaspathcomponent_object_inlet_stationnr(component_objects, astationnr):
-    return next((obj for obj in component_objects if (isinstance(obj, gaspath)) and (obj.stationin == astationnr)), None)
-
-def Compression(GasIn: ct.Quantity, GasOut: ct.Quantity, PR, Eta, Polytropic_Eta = 0):
+def Compression(gas_in: ct.Quantity, gas_out: ct.Quantity, PR, Eta, Polytropic_Eta = 0):
     # v1.4 polytropic efficiency option
     if Polytropic_Eta == 1:
-        R = ct.gas_constant / GasIn.phase.mean_molecular_weight
-        Sout = GasIn.s + R*log(PR)*(1/Eta-1)
-        Pout = GasIn.P*PR
-        GasOut.SP = Sout, Pout # get GasOut at constant s and higher P
+        R = ct.gas_constant / gas_in.phase.mean_molecular_weight
+        Sout = gas_in.s + R*log(PR)*(1/Eta-1)
+        Pout = gas_in.P*PR
+        gas_out.SP = Sout, Pout # get gas_out at constant s and higher P
     else:
-        Sin = GasIn.s
-        Pout = GasIn.P*PR
-        GasOut.SP = Sin, Pout # get GasOut at constant s and higher P
-        Hisout = GasOut.enthalpy_mass # isentropic exit specific enthalpy
-        Hout = GasIn.enthalpy_mass + (Hisout - GasIn.enthalpy_mass) / Eta
-        GasOut.HP = Hout, Pout
-        # bug fix: for Fan, GasOut<>GasIn: use GasOut as the mass being compressed
-        # PW = GasOut.H - GasIn.H
-    PW = GasOut.H - GasOut.mass * GasIn.phase.enthalpy_mass
+        Sin = gas_in.s
+        Pout = gas_in.P*PR
+        gas_out.SP = Sin, Pout # get gas_out at constant s and higher P
+        Hisout = gas_out.enthalpy_mass # isentropic exit specific enthalpy
+        Hout = gas_in.enthalpy_mass + (Hisout - gas_in.enthalpy_mass) / Eta
+        gas_out.HP = Hout, Pout
+        # bug fix: for Fan, gas_out<>gas_in: use gas_out as the mass being compressed
+        # PW = gas_out.H - gas_in.H
+    PW = gas_out.H - gas_out.mass * gas_in.phase.enthalpy_mass
     return PW
 
-def TurbineExpansion(GasIn: ct.Quantity, GasOut: ct.Quantity, PR, Eta, Wexp, Eta_Polytropic = 0):
+def TurbineExpansion(gas_in: ct.Quantity, gas_out: ct.Quantity, PR, Eta, Wexp, Eta_Polytropic = 0):
     # GSP code polytropic efficiency
     #   S:=Incond.S-FR(Composition)*ln(PR)*(Etapol-1);
     #   // Note that S already has pressure effect (ln(PR) therefore :
@@ -147,23 +154,49 @@ def TurbineExpansion(GasIn: ct.Quantity, GasOut: ct.Quantity, PR, Eta, Wexp, Eta
     #   S:=FS(Tt,Pt,Composition);
     #   H:=FH(Tt,Composition);
     #   Etais:=(Incond.H-H)/(Incond.H-His);
-    Pout = GasIn.P / PR
+
+    # 1.6.0.5 make sure Pout becomes a single value
+    # Pout = gas_in.P / PR
+    Pout = gas_in.P / float(np.asarray(PR).squeeze())
+
     if Eta_Polytropic:
-        R = ct.gas_constant / GasIn.phase.mean_molecular_weight
-        Sout = GasIn.s - R*log(PR)*(1/Eta-1)
-        GasOut.SP = Sout, Pout
+        R = ct.gas_constant / gas_in.phase.mean_molecular_weight
+        Sout = gas_in.s - R*log(PR)*(1/Eta-1)
+        gas_out.SP = Sout, Pout
     else:
-        GasOut.SP = GasIn.entropy_mass, Pout
-        final_enthalpy_is = GasOut.enthalpy_mass
+        gas_out.SP = gas_in.entropy_mass, Pout
+        final_enthalpy_is = gas_out.enthalpy_mass
         # eta_is = (initial_enthalpy - final_enthalpy) / (initial_enthalpy - final_enthalpy_is)
-        final_enthalpy = GasIn.enthalpy_mass - (GasIn.enthalpy_mass - final_enthalpy_is) * Eta
-        GasOut.HP = final_enthalpy, Pout
-        # if Wexp = None then assume mass flow in = mass flow out here (GasIn.mass = GasOut.mass), so:
+        final_enthalpy = gas_in.enthalpy_mass - (gas_in.enthalpy_mass - final_enthalpy_is) * Eta
+        gas_out.HP = final_enthalpy, Pout
+        # if Wexp = None then assume mass flow in = mass flow out here (gas_in.mass = gas_out.mass), so:
     if Wexp == None:
-        PW = GasIn.H - GasOut.H
+        PW = gas_in.H - gas_out.H
     else:
-        PW = Wexp * (GasIn.enthalpy_mass - GasOut.enthalpy_mass)
+        PW = Wexp * (gas_in.enthalpy_mass - gas_out.enthalpy_mass)
     return PW
+
+#  2.0
+# try the fastest first.
+# For your case, a good practical order is auto → vcs → gibbs.
+# Do not assume the fastest successful one is always the best-conditioned one.
+# Log solver usage so you can see where robustness problems are coming from.
+def robust_combustor_equilibrate(gas, max_iter=2000):
+    methods = [
+        ("auto",  dict()),
+        ("vcs",   dict(solver="vcs", max_iter=max_iter)),
+        ("gibbs", dict(solver="gibbs", max_iter=max_iter, estimate_equil=-1)),
+    ]
+
+    last_err = None
+    for name, kwargs in methods:
+        try:
+            gas.equilibrate("HP", **kwargs)
+            return name
+        except Exception as err:
+            last_err = err
+
+    raise RuntimeError(f"All HP equilibrium solvers failed. Last error: {last_err}")
 
 def stagnation_pressure_from_quantity(q, V):
     # Stagnation pressure p0 for a ct.Quantity state with speed V.
@@ -229,6 +262,16 @@ def stagnation_pressure_from_quantity(q, V):
     finally:
         # Restore original phase state
         ph.TPY = T_save, P_save, Y_save
+
+#  2.0 for converting from Cantera 1-D arrays
+def scalar(x):
+    a = np.asarray(x)
+    if a.size != 1:
+        raise ValueError(f"Expected scalar-like value, got shape {a.shape}: {x!r}")
+    return float(a.squeeze())
+
+def scalar_dict(d):
+    return {k: scalar(v) for k, v in d.items()}
 
 #  under development ?
 # def static_from_total(q_tot, A=None,

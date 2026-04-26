@@ -13,29 +13,9 @@
 # Authors
 #   Wilfried Visser
 
-import math
-import numpy as np
 import cantera as ct
-import pandas as pd
-from pathlib import Path
 
-# Create a gas object for air and products using the standardr gri30.yaml,
-# or another suitable mechanism
-# gas = ct.Solution('gri30.yaml')
-# We are using jetsurf.yaml instead, which has kerosine subsitute
-# species like PXC12H25, for user specified fuel composition
-
-data_dir = Path(__file__).resolve().parent.parent / 'data'
-gas = ct.Solution(data_dir / 'fluid_props/jetsurf.yaml')
-
-C_atom_weight = gas.atomic_weight(gas.element_index('C'))
-O_atom_weight = gas.atomic_weight(gas.element_index('O'))
-H_atom_weight = gas.atomic_weight(gas.element_index('H'))
-
-O2_molar_mass = gas.molecular_weights[gas.species_index('O2')]
-CO2_molar_mass = gas.molecular_weights[gas.species_index('CO2')]
-H2O_molar_mass = gas.molecular_weights[gas.species_index('H2O')]
-
+# constants
 # Define the air composition species, mass fraction, mole fraction, molefraction normalized to O2
 Air_composition = [
     ('CO2', 0.00048469, 0.000412, 0.0020 ),
@@ -72,20 +52,3 @@ P_std = 101325
 # Standard temperature for chemical gas model calculations
 T_standard_ref = 298.15 # (25°C)
 P_standard_ref = ct.one_atm  # (1 atm)
-
-# 1.4
-output_path = None
-
-h_air_ref = None
-def InitializeGas():
-    gas.TPY = T_standard_ref, P_standard_ref, s_air_composition_mass
-    global h_air_ref
-    h_air_ref = gas.enthalpy_mass
-
-# divide N by GetRotorspeedCorrectionFactor to get Nc corrected
-def GetRotorspeedCorrectionFactor(gas: ct.Quantity):
-    return math.sqrt(gas.T/T_std)
-
-# multiply W by GetFlowCorrectionFactor to get Wc corrected
-def GetFlowCorrectionFactor(gas: ct.Quantity):
-    return math.sqrt(gas.T/T_std) / (gas.P/P_std)

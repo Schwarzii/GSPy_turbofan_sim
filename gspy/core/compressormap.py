@@ -32,14 +32,14 @@ class TCompressorMap(TTurboMap):
 
     def ReadMap(self, filename):
         super().ReadMap(filename)
-        self.nc_values, self.beta_values, self.wc_array = self.ReadNcBetaCrossTable(self.mapfile, 'MASS FLOW')
-        self.nc_values, self.beta_values, self.eta_array = self.ReadNcBetaCrossTable(self.mapfile, 'EFFICIENCY')
-        self.nc_values, self.beta_values, self.pr_array = self.ReadNcBetaCrossTable(self.mapfile, 'PRESSURE RATIO')
-        dummy_value, self.sl_wc_array, self.sl_pr_array = self.ReadNcBetaCrossTable(self.mapfile, 'SURGE LINE')
+        self.nc_values, self.beta_values, self.wc_array = self.ReadNcBetaCrossTable(self.map_file, 'MASS FLOW')
+        self.nc_values, self.beta_values, self.eta_array = self.ReadNcBetaCrossTable(self.map_file, 'EFFICIENCY')
+        self.nc_values, self.beta_values, self.pr_array = self.ReadNcBetaCrossTable(self.map_file, 'PRESSURE RATIO')
+        dummy_value, self.sl_wc_array, self.sl_pr_array = self.ReadNcBetaCrossTable(self.map_file, 'SURGE LINE')
         self.DefineInterpolationFunctions()
 
-    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True, surge_margin = 5):
-        super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series)
+    def PlotMap(self, use_scaled_map = True, do_plot_design_point = True, do_plot_series = True, nc_labels_use_scaling = True, beta_lines = True, beta_label_side = 'end'):
+        super().PlotMap(use_scaled_map, do_plot_design_point, do_plot_series, nc_labels_use_scaling)
 
         if use_scaled_map:
             self.compSlWcArrayValues = self.sl_wc_array * self.SFmap_Wc
@@ -58,14 +58,21 @@ class TCompressorMap(TTurboMap):
             # Add NcValue text at the last point of the curve
             ymin, ymax = self.main_plot_axis.get_ylim()
             # self.main_plot_axis.text(x[-1], y[-1], f'{NcValue:.1f}', fontsize=8, ha='left', va='center')
-            if index == 0:
-                text_label = f'Nc = {NcValue:.1f}'
-            else:
-                text_label = f'{NcValue:.1f}'
+            # 1.6.0.6
+            # if index == 0:
+            #     text_label = f'Nc = {NcValue:.1f}'
+            # else:
+            #     text_label = f'{NcValue:.1f}'
+            label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
             self.main_plot_axis.text(
-                x[0], y[0], text_label,
+            # 1.6.0.6
+                # x[0], y[0], text_label,
+                x[0], y[0], label_txt,
                 fontsize=8, ha='left', va='center'
             )
+        if beta_lines:
+            self._plot_beta_lines(self.main_plot_axis, self.WcArrayValues, self.PRArrayValues, beta_label_side=beta_label_side)
+
         self.main_plot_axis.set_xlabel('Corrected massflow')
         self.main_plot_axis.set_ylabel('Pressure Ratio')
 
@@ -80,20 +87,20 @@ class TCompressorMap(TTurboMap):
 
         # Design point
         if do_plot_design_point:
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(),
-                                     fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(),
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(),
+                                     self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(),
                                      markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow',
                                      markeredgecolor='black')
 
         # Operating line
         if do_plot_series:
             # Plotting Wc - PR
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),
-                                     fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),
+                                     self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
                                      linewidth=1.5, linestyle='solid', color='navy')
 
-            wc = fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy()
-            pr = fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy()
+            wc = self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy()
+            pr = self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy()
 
             arrow_dx = np.diff(wc) / 2
             arrow_dy = np.diff(pr) / 2
@@ -108,19 +115,19 @@ class TCompressorMap(TTurboMap):
                                              arrowprops=dict(width=0.01, headwidth=4, headlength=6,
                                                              facecolor='navy', edgecolor='navy'))
             surge_line_points = np.vstack([self.compSlWcArrayValues, self.compSlPRArrayValues[0]])
-            np.save(self.map_figure_pathname.parent/'map_data'/f'{self.name}_surge', surge_line_points)
+            np.save(self.map_figure_dir_path /'map_data'/f'{self.name}_surge', surge_line_points)
             op_line_points = np.vstack([wc, pr])
-            np.save(self.map_figure_pathname.parent/'map_data'/f'{self.name}_op_line', op_line_points)
+            np.save(self.map_figure_dir_path /'map_data'/f'{self.name}_op_line', op_line_points)
         plt.tight_layout()
 
         # Save plot handle for further processing
-        with open(self.map_figure_pathname.parent/'map_data'/f'{self.name}_plot.pickle', "wb+") as f:
+        with open(self.map_figure_dir_path /'map_data'/f'{self.name}_plot.pickle', "wb+") as f:
             pickle.dump(self.map_figure, f)
 
-        self.map_figure.savefig(self.map_figure_pathname.parent / 'map' / self.map_figure_pathname.name, dpi=100)
+        self.map_figure.savefig(self.map_figure_dir_path / 'map' / self.map_figure_file_path.name, dpi=100)
 
-    def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = True, do_plot_design_point = True, do_plot_series = True):
-        super().PlotDualMap(eta_name, use_scaled_map, do_plot_design_point, do_plot_series)
+    def PlotDualMap(self, eta_name = 'Eta_is_', use_scaled_map = True, do_plot_design_point = True, do_plot_series = True, nc_labels_use_scaling = True, beta_lines = True, beta_label_side = 'end'):
+        super().PlotDualMap(eta_name, use_scaled_map, do_plot_design_point, do_plot_series, nc_labels_use_scaling)
 
         # Plot Wc-Eta top subplot
         for index, NcValue in enumerate(self.NcArrayValues):
@@ -130,7 +137,7 @@ class TCompressorMap(TTurboMap):
             x = np.asarray(self.WcArrayValues[index])
             y = np.asarray(self.EtaArrayValues[index])
             # First line gets "Nc=\n<value>", others just "<value>"
-            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+            label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
 
             # Optional: stagger vertical offset a bit to reduce collisions when ends align
             dy = (index % 2) * 6 - 3  # -3, +3, -3, +3...
@@ -138,6 +145,9 @@ class TCompressorMap(TTurboMap):
                 self.main_plot_axis, x, y,
                 label_txt, which="first", color="black", dx=4, dy=dy, fontsize=7
             )
+
+        if beta_lines:
+            self._plot_beta_lines(self.main_plot_axis, self.WcArrayValues, self.EtaArrayValues, beta_label_side=beta_label_side)
 
         self.main_plot_axis.set_ylabel('Efficiency')
         # self.main_plot_axis.set_xlabel('Pressure Ratio')
@@ -148,30 +158,29 @@ class TCompressorMap(TTurboMap):
             # 1.6.0.4
             x = np.asarray(self.WcArrayValues[index])
             y = np.asarray(self.PRArrayValues[index])
-            label_txt = self._format_nc_label(NcValue, with_prefix=(index == 0))
+            label_txt = self._format_nc_label(self._get_nc_label_value(NcValue, self.SFmap_Nc, nc_labels_use_scaling), with_prefix=(index == 0))
             dy = (index % 2) * 6 - 3
             self._annotate_line_end(
                 self.secondary_plot_axis, x, y,
                 label_txt, which="first", color="black", dx=4, dy=dy, fontsize=7
             )
 
+        if beta_lines:
+            self._plot_beta_lines(self.secondary_plot_axis, self.WcArrayValues, self.PRArrayValues, beta_label_side=beta_label_side)
+
         self.secondary_plot_axis.set_ylabel('Pressure Ratio')
         self.secondary_plot_axis.set_xlabel('Corrected Mass Flow')
 
         # Design point
         if do_plot_design_point:
-            #  1.5
-            # self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')]['Eta_is_' + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][eta_name + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
-            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'DP')][eta_name + str(self.host_component.name)].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
+            self.secondary_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.Wc_in_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'DP')][self.PR_comp_param].to_numpy(), markersize=6.0, linestyle='none', marker='s', markeredgewidth=0.75, markerfacecolor='yellow', markeredgecolor='black')
 
         # Operating line
         if do_plot_series:
             # Plotting Wc - PR
-            #  1.5
-            # self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')]['Eta_is_' + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
-            self.main_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][eta_name + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
-            self.secondary_plot_axis.plot(fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), fsys.OutputTable[(fsys.OutputTable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.main_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')][eta_name + str(self.host_component.name)].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
+            self.secondary_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
 
         # self.dual_map_figure.tight_layout()
-        self.dual_map_figure.savefig(self.map_figure_pathname.parent / 'map_dual' / self.map_figure_pathname.name)
+        self.dual_map_figure.savefig(self.map_figure_dir_path / 'map_dual' / self.map_figure_file_path.name)
