@@ -15,14 +15,14 @@
 #   Oscar Kogenhop
 
 from pathlib import Path
+import math
+
 import numpy as np
 import pandas as pd
-import math
-import os
-import cantera as ct
 from scipy.optimize import root
 import matplotlib.pyplot as plt
 import cantera as ct
+
 from gspy.core.ambient import TAmbient
 from gspy.core.gaspath import TGaspath
 
@@ -34,6 +34,8 @@ class TSystemModel:
                 model_name: str | None,
                 *,    # force optional parameters passing by name
                 model_file: str,
+                input_dir: str = 'input',
+                output_dir: str = 'output',
                 cantera_yaml_filename: str = DEFAULT_YAML,
                 verbose: bool = DEFAULT_VERBOSE):
 
@@ -47,10 +49,10 @@ class TSystemModel:
         project_dir = Path(model_file).resolve().parent
 
         # Paths relative to the chosen model root
-        self.data_dir_path = project_dir.parent / 'gspy' / "data"
+        self.data_dir_path = Path(__file__).parent.parent / 'data'
         self.maps_dir_path = self.data_dir_path / "maps"
-        self.input_dir_path = project_dir / "input"
-        self.output_dir_path = project_dir / "output"
+        self.input_dir_path = project_dir / input_dir
+        self.output_dir_path = project_dir / output_dir
         self.fluid_props_dir_path = self.data_dir_path / "fluid_props"
 
         # initialize Cantera gas properties model
@@ -404,11 +406,12 @@ class TSystemModel:
 
     def OutputToCSV(self):
         # Export to Excel
-        os.makedirs(self.output_dir_path, exist_ok=True)
-        outputcsvfilename = os.path.join(self.output_dir_path, self.model_name + ".csv")
+        if not self.output_dir_path.exists():
+            self.output_dir_path.mkdir()
+        outputcsvfilename = self.output_dir_path / (self.model_name + ".csv")
         self.prepare_output_table()
         self.output_table.to_csv(outputcsvfilename, index=False, float_format='%.6f')
-        self.vprint("output saved in "+outputcsvfilename)
+        self.vprint("output saved in " + str(outputcsvfilename))
 
     def Plot_X_nY_graph(self, title, filename_suffix, xcol, ycollist, do_show = False):
         self.prepare_output_table()
@@ -467,9 +470,9 @@ class TSystemModel:
         # xyplotfilename = os.path.join(output_directory, os.path.splitext(os.path.basename(__file__))[0]) + ".jpg"
         # 2.0.0.0
         # jpg_filename = self.model_name + filename_suffix + ".jpg"
-        jpg_filename = os.path.join(self.output_dir_path, self.model_name + filename_suffix + ".jpg")
-        fig.savefig(jpg_filename)
-        self.vprint("x-4y plot saved in " + jpg_filename)
+        img_filename = self.output_dir_path / f'{self.model_name}{filename_suffix}.png'
+        fig.savefig(img_filename)
+        self.vprint("x-4y plot saved in " + str(img_filename))
 
     def PlotMaps(self):
         self.prepare_output_table()
