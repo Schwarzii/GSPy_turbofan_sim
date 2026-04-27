@@ -273,7 +273,7 @@ class TTurboMap(TMap):
         # 1.6.0.3 reverted
         # self.map_figure_file_path = self.out fu.output_dir_path / (self.name + '_dual' + '.jpg')
         # override default
-        self.map_figure_file_path = self.map_figure_dir_path / (self.name + '_dual' + '.jpg')
+        self.map_figure_file_path = self.map_figure_dir_path / (self.name + '_dual' + '.png')
 
         # Create the subplot graph for a split turbomachinary plot
         self.dual_map_figure, (self.main_plot_axis, self.secondary_plot_axis) = plt.subplots(

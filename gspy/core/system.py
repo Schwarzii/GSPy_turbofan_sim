@@ -47,7 +47,7 @@ class TSystemModel:
         project_dir = Path(model_file).resolve().parent
 
         # Paths relative to the chosen model root
-        self.data_dir_path = project_dir / 'gspy' / "data"
+        self.data_dir_path = project_dir.parent / 'gspy' / "data"
         self.maps_dir_path = self.data_dir_path / "maps"
         self.input_dir_path = project_dir / "input"
         self.output_dir_path = project_dir / "output"

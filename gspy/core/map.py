@@ -59,7 +59,7 @@ class TMap:
         # # 1.4
         # # self.map_figure_file_path = output_dir + self.name + '.jpg'
         self.map_figure_dir_path = self.host_component.owner.output_dir_path
-        self.map_figure_file_path = self.host_component.owner.output_dir_path / (self.name + ".jpg")
+        self.map_figure_file_path = self.host_component.owner.output_dir_path / (self.name + ".png")
         # # Create the directory if it doesn't exist
         # if not os.path.isdir(output_dir):
         #     os.makedirs(output_dir)

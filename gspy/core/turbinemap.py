@@ -144,7 +144,7 @@ class TTurbineMap(TTurboMap):
                     self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(),
                     linewidth=1.5, linestyle='solid', color='navy')
 
-        self.map_figure.savefig(self.map_figure_file_path)
+        self.map_figure.savefig(self.map_figure_dir_path / 'map' / self.map_figure_file_path.name, dpi=100)
 
     def PlotDualMap(self, use_scaled_map = False, do_plot_design_point = False, do_plot_series = False, nc_labels_use_scaling = True, beta_lines = True, beta_label_side = 'end'):
         super().PlotDualMap(use_scaled_map, do_plot_design_point, do_plot_series, nc_labels_use_scaling)
@@ -202,4 +202,4 @@ class TTurbineMap(TTurboMap):
             self.secondary_plot_axis.plot(self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.PR_comp_param].to_numpy(), self.simresultstable[(self.simresultstable['Mode'] == 'OD')][self.Wc_in_param].to_numpy(),  linewidth=1.5, linestyle='solid', color='navy')
 
         # self.dual_map_figure.tight_layout()
-        self.dual_map_figure.savefig(self.map_figure_file_path)
+        self.dual_map_figure.savefig(self.map_figure_dir_path / 'map_dual' / self.map_figure_file_path.name)
