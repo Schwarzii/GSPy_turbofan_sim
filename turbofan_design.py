@@ -224,8 +224,6 @@ class PostTFSim:
 
         self.map_data_dir = simulation.output_path / 'map_data'
 
-        print()
-
     def fan_speed_vs_perf(self, y, lbl=None, save_name=None, row_layout=False):
         if isinstance(y, str):
             y = [y]
@@ -275,17 +273,123 @@ class PostTFSim:
 
         print()
 
+    @staticmethod
+    def fit_plot(x, y, poly):
+        plt.plot(x, y)
+        plt.plot(x, poly(x), '--')
+        plt.show()
+
+    def fit_root(self, poly, root_low=None, root_high=None):
+        if root_low is None:
+            root_low = self.od_perf['N1%'].min()
+        if root_high is None:
+            root_high = self.od_perf['N1%'].max()
+        root = np.roots(poly)
+        root = np.real(root[np.isreal(root)])
+        return root[(root_low < root) & (root < root_high)]
+
+    def surge_line_limit(self, map_name='core', sm_pct=0):
+        match map_name:
+            case 'core':
+                map_name = 'Fan_Bst_map_core'
+            case 'duct':
+                map_name = 'Fan_Bst_map_duct'
+            case 'hpc':
+                map_name = 'HPC_map'
+        surge_line = np.load(self.map_data_dir / f'{map_name}_surge.npy')
+        sm_line = surge_line[0] * (1 + sm_pct / 100)
+        sm_line_fit = np.poly1d(np.polyfit(sm_line, surge_line[1], 6))  # Fitting of the surge (margin) line
+        surge_line_inv_fit = np.poly1d(np.polyfit(surge_line[1], surge_line[0], 6))
+
+        op_line = np.load(self.map_data_dir / f'{map_name}_op_line.npy')
+        op_fit = np.poly1d(np.polyfit(op_line[0], op_line[1], 6))  # Fitting of operating line
+
+        wc_fit = np.poly1d(np.polyfit(op_line[0], self.od_perf['N1%'], 6))  # Fitting of Wc vs. N1
+
+        if sm_pct != 0:
+            with open(self.map_data_dir / f"{map_name}_plot.pickle", "rb") as f:
+                map_plot = pickle.load(f)
+
+            map_plot.axes[0].plot(surge_line[0] * (1 + sm_pct / 100), surge_line[1], lw=1.0, ls='dashed',
+                                  color='red', label=f'Surge Line (margin = {sm_pct}%)')
+            map_plot.savefig(self.post_out_dir / f"{map_name}_sm{sm_pct}.png", dpi=100)
+            map_plot.show()
+
+        sm_fit = op_fit - sm_line_fit  # Fitting of the surge margin value
+
+        surge_wc = self.fit_root(sm_fit, op_line[0].min(), op_line[0].max())
+        if len(surge_wc) > 0:
+            for sp in surge_wc:
+                surge_n1 = wc_fit(sp)
+                print(f'surge @ Wc = {sp:.2f}, sm = {sm_pct}%,  N1 = {surge_n1:.2f}%')
+        else:
+            min_sm = (op_line[0] / surge_line_inv_fit(op_line[1]) - 1).min()
+            print(f'min surge margin = {min_sm * 100:.2f}%')
+
+        plt.plot(surge_line[0], surge_line[1])
+        plt.plot(surge_line[0] * (1 + sm_pct / 100), sm_line_fit(surge_line[0] * (1 + sm_pct / 100)))
+        plt.plot(op_line[0], op_line[1])
+        plt.show()
+
+        print()
+
+    def n1_limit_at_dp_perf_fit(self, fit_perf='T4', lim_target=None, deg=6):
+        if lim_target is None:
+            lim_target = self.dp_perf[fit_perf][0]
+        lim_fit = np.poly1d(np.polyfit(self.od_perf['N1%'], self.od_perf[fit_perf] - lim_target, deg))
+        lim_target_n1 = self.fit_root(lim_fit)
+        if not lim_target_n1:
+            print(f'No N1 can achieve DP {fit_perf}')
+            return
+        print(f'Achieve DP {fit_perf} at N1 = {', '.join([f"{lim_target_n1:.2f}%"])}')
+
+        # self.fit_plot(self.od_perf['N1%'], self.od_perf[fit_perf] - lim_target, lim_fit)
+
+    def find_min_by_fit(self, perf_y, deg=8):
+        perf_fit_c = np.polyfit(self.od_perf['N1%'], self.od_perf[perf_y], deg)
+        perf_fit = np.poly1d(perf_fit_c)
+        # fit_plot(od_perf['N1%'], od_perf[perf_y], np.poly1d(perf_fit_c))
+
+        fig_grad_poly = np.poly1d(perf_fit_c[:deg] * np.arange(deg, 0, -1))
+        min_point = self.fit_root(fig_grad_poly)[0]
+        min_perf_y = perf_fit(min_point)
+        print(f"Min {perf_y} point -> {min_perf_y:.4f} @ N1 = {min_point:.2f}%")
+
+        return min_point
+
+    def fit_perf_at_n1(self, n1, deg=6, dec=2, *args):
+        for pi in range(0, len(args), 2):
+            perf = args[pi]
+            perf_lbl = args[pi + 1] if pi + 1 < len(args) else perf
+            perf_fit = np.poly1d(np.polyfit(self.od_perf['N1%'], self.od_perf[perf], deg))
+            perf_at_n1 = perf_fit(n1)
+            if perf_lbl is None:
+                perf_lbl = perf
+            print(f"{perf_lbl} | {perf} @ N1 = {n1:.2f}% -> {perf_at_n1:.{dec}f}")
+
 
 if __name__ == '__main__':
     tf = TurbofanSim('methane_fuel_sim')
-    tf.set_combustor(DesignCombustor(od_sweep=(1300, 1100, -50)))
+    tf.set_combustor(DesignCombustor(od_sweep=(1600, 1100, -50)))
     tf.turbofan_configuration()
-    # tf.run_design_point_methane()
-    # tf.run_turbofan_od()
-    # tf.save_post_result()
+    tf.run_design_point_methane()
+    tf.run_turbofan_od()
+    tf.save_post_result()
 
     post = PostTFSim(tf)
-    post.fan_speed_vs_perf('TSFC')
+    # post.fan_speed_vs_perf(['T4', 'T45'], ["TIT [K]", "EGT [K]"], 'turbine_temp_limit_row_plot', True)
+    # post.fan_speed_vs_perf(['Wf_combustor', 'FN', 'TSFC'],
+    #                        ["Fuel flow [kg/s]", "Net thrust [kN]", 'TSFC [kg/N h]'],
+    #                        'fuel_efficiency')
+    # post.fan_speed_vs_perf(['TSFC'], ['TSFC [kg/N h]'], 'TSFC')
+
+    n1_target = post.find_min_by_fit('TSFC')
+    post.fit_perf_at_n1(n1_target, 6, 2,
+                        'T4', 'TIT',
+                        'T45', 'EGT',
+                        'Wf_combustor', 'fuel flow',
+                        'FN', 'net thrust',
+                        'TSFC')
 
 
     print()
