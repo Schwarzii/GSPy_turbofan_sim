@@ -20,7 +20,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspy.core import sys_global as FG
-
 from gspy.core.control import TControl
 from gspy.core.ambient import TAmbient
 from gspy.core.inlet import TInlet
@@ -31,11 +30,8 @@ from gspy.core.turbine import TTurbine
 from gspy.core.duct import TDuct
 from gspy.core.exhaustnozzle import TExhaustNozzle
 
-from ExhaustLogger import ExhaustLogger
+from EmissionMonitor import EmissionMonitor
 
-import matplotlib.pyplot as plt
-import numpy as np
-from contextlib import redirect_stdout
 import pandas as pd
 from multiprocessing import Pool
 
@@ -63,7 +59,7 @@ def setup(controller):
     # create a control (controlling all inputs to the system model)
     # combustor Texit input, with Wf 1.11 as first guess for 1600 K DP combustor exit temperature
     
-    logger = ExhaustLogger("ExhaustLogger")
+    logger = EmissionMonitor("EmissionMonitor", tracked_gases=["CO2", "H2O", "CO"])
     # create a turbojet system model
     fsys.system_model = [fsys.Ambient,
                         controller,
@@ -124,9 +120,20 @@ def generate_output(system, fuel_name, top_n=10):
     
     # create additional output listing the top top_n emitted gases and their flowrate
     # This will be for the last OD datapaoint for the given fuel
-    mass_dict = system.components["ExhaustLogger"].get_exhaust_masses()
+    mass_dict = system.components["EmissionMonitor"].get_exhaust_masses()
     s = pd.Series(mass_dict).sort_values(ascending=False).head(top_n)
+    s.name = "flowrate"
     s.to_csv(FG.output_path / f"{fuel_name}_top{top_n}_species.csv")
+    system.Plot_X_nY_graph('Performance vs N1 [%] at Alt 10000m, Ma 0.8 (DP at ISA SL)',
+                        FG.output_path / f"{fuel_name}.jpg",
+                        # common X parameter column name with label
+                        ("FN",           "Net thrust [kN]"),
+                        # 4 Y paramaeter column names with labels and color
+                        [   ("T4",              "TIT [K]",                  "blue"),
+                            ("T45",             "EGT [K]",                  "blue"),
+                            ("W2",              "Inlet mass flow [kg/s]",   "blue"),
+                            ("Wf_combustor1",   "Fuel flow [kg/s]",         "blue"),
+                            ("FN",              "Net thrust [kN]",          "blue")            ])
 
 
 def process_fuel(args):
@@ -144,9 +151,9 @@ def process_fuel(args):
     generate_output(result_system, fuel_name)
 
 # Thrust sweep params (sweep goes from T_nom*relmin to T_nom*relmax in "steps" steps)
-relmin = 0.9
-relmax = 1.1
-steps = 5
+relmin = 0.8
+relmax = 1.2
+steps = 10
 T_nom = 24.45 # [kN]
 
 # Fuel params
@@ -155,9 +162,10 @@ assumed_od_wf = 0.5 # Initial guess for OD calculations. Adjust to converge for 
 
 # All fuel compositions to test (additional ones can be defined here)
 FUEL_DICT = {
-    "H2": [fueltemp, None, None, None, 'H2:1'],
     "jet": [None, 43031, 1.9167, 0, ''],
     "naturalgas": [fueltemp, None, None, None, 'CH4:9, N2:1'],
+    "H2": [fueltemp, None, None, None, 'H2:1']
+    
 }
 
 FuelControl = TControl('Control', '', 1.11, T_nom*relmin, T_nom*relmax, T_nom*(relmax-relmin)/steps, "FN")

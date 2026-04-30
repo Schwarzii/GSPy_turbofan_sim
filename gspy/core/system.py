@@ -33,8 +33,6 @@ output_dict = {}
 system_model = [] # system model component list
 shaft_list = []
 
-mass_dict = {}
-
 inputpoints = np.array([], dtype=float)
 points_output_interval = 1
 
