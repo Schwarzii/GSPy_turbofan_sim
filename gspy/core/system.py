@@ -251,20 +251,17 @@ def Plot_X_nY_graph(title, jpg_filename, xcol, ycollist):
         ax = axes[yaxisnr]
 
         # main line
-        ax.plot(OutputTable[xname], OutputTable[col], color=color, zorder=2)
+        ax.plot(OutputTable.loc[~dp_mask, xname], OutputTable.loc[~dp_mask, col], color=color, zorder=2)
         ax.set_ylabel(label)
 
         # screen-fixed squares at design points (only for rows where Mode == "DP")
-        ax.scatter(
-            OutputTable.loc[dp_mask, xname],
-            OutputTable.loc[dp_mask, col],
-            s=40,                    # points^2, screen-fixed size
-            marker="s",
-            facecolors="yellow",
-            edgecolors="black",
-            linewidths=0.8,
+        ax.plot(
+            [OutputTable.loc[~dp_mask, xname].max(), OutputTable.loc[~dp_mask, xname].min()],
+            [*OutputTable.loc[dp_mask, col], *OutputTable.loc[dp_mask, col]],
+            linestyle="--",
+            color="black",
             zorder=1,
-            label="Design point" if yaxisnr == 0 else None  # add legend label once
+            label="Value at design point" if yaxisnr == 0 else None  # add legend label once
         )
 
         yaxisnr += 1

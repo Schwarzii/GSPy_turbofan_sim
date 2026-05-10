@@ -124,7 +124,7 @@ def generate_output(system, fuel_name, top_n=10):
     s = pd.Series(mass_dict).sort_values(ascending=False).head(top_n)
     s.name = "flowrate"
     s.to_csv(FG.output_path / f"{fuel_name}_top{top_n}_species.csv")
-    system.Plot_X_nY_graph('Performance vs FN [%] at Alt 10000m, Ma 0.8 (DP at ISA SL)',
+    system.Plot_X_nY_graph(f'',
                         FG.output_path / f"{fuel_name}.jpg",
                         # common X parameter column name with label
                         ("FN",           "Net thrust [kN]"),
@@ -133,7 +133,7 @@ def generate_output(system, fuel_name, top_n=10):
                             ("T45",             "EGT [K]",                  "blue"),
                             ("W2",              "Inlet mass flow [kg/s]",   "blue"),
                             ("Wf_combustor1",   "Fuel flow [kg/s]",         "blue"),
-                            ("N1%",              "Fan speed [-]",          "blue")            ])
+                            ("N1%",              "Fan speed [%]",          "blue")            ])
 
 
 def process_fuel(args):
