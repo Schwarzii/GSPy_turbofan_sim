@@ -192,6 +192,9 @@ class TurbofanSim:
         self.sys.Run_OD_simulation()
 
     def save_post_result(self):
+        print()
+        print(f"Save simulation results")
+        print("=======================")
         # export OutputTable to CSV
         self.sys.OutputToCSV()
 
@@ -211,11 +214,20 @@ class TurbofanSim:
         self.sys.PlotMaps()
 
         print("end of running turbofan simulation")
+        print()
+
+    def run_full_model(self):
+        self.turbofan_configuration()
+        self.run_design_point_methane()
+        self.run_od_simulation()
+        self.save_post_result()
 
 
 class PostTFSim:
     def __init__(self, simulation: TurbofanSim, post_output_dir=''):
         self.post_out_dir = simulation.output_path / post_output_dir  # Default is not creating a separate folder
+        if not self.post_out_dir.exists():
+            self.post_out_dir.mkdir()
 
         self.sim_data = pd.read_csv(simulation.output_path / 'Turbofan.csv')
         self.sim_data['TSFC'] = self.sim_data['Wf_combustor'] / (self.sim_data['FN'] * 1000) * 3600  # [kg/Nh]
@@ -224,7 +236,17 @@ class PostTFSim:
 
         self.map_data_dir = simulation.output_path / 'map_data'
 
+        print("Post process simulation results")
+        print("=======================")
+
+    @staticmethod
+    def ax_grid(ax: plt.Axes):
+        ax.grid(True, which='major', ls='dashed')
+        ax.grid(True, which='minor', ls='dotted')
+        ax.minorticks_on()
+
     def fan_speed_vs_perf(self, y, lbl=None, save_name=None, row_layout=False):
+        print(f"Drawing {y} vs N1")
         if isinstance(y, str):
             y = [y]
         if lbl is None:
@@ -246,14 +268,12 @@ class PostTFSim:
                 edgecolors="black",
                 linewidths=0.8,
                 zorder=1,
-                label="Design point" if i == 0 else None  # add legend label once
+                label="Design point (methane fuel)" if i == 0 else None  # add legend label once
             )
             for dp_y in self.dp_perf[y[i]]:
                 ax.axhline(dp_y, color='k', ls='dashed', lw=0.8)
 
-            ax.grid(True, which='major', ls='dashed')
-            ax.grid(True, which='minor', ls='dotted')
-            ax.minorticks_on()
+            self.ax_grid(ax)
 
             if row_layout:
                 ax.set_xlabel('Fan speed [%]')
@@ -357,7 +377,9 @@ class PostTFSim:
 
         return min_point
 
-    def fit_perf_at_n1(self, n1, deg=6, dec=2, *args):
+    def fit_perf_at_n1(self, n1, *args, **kwargs):
+        deg = kwargs.get('deg', 6)
+        dec = kwargs.get('dec', 2)
         for pi in range(0, len(args), 2):
             perf = args[pi]
             perf_lbl = args[pi + 1] if pi + 1 < len(args) else perf
