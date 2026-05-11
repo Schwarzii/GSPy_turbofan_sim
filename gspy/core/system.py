@@ -292,6 +292,7 @@ class TSystemModel:
             for ipoint in self.inputpoints:
                 # solution returns the residual errors after conversion (shoudl be within the tolerance 'tol')
                 # fsys.Do_Output(Mode, inputpoints[ipoint])
+                print(f"Running OD sim: {ipoint + 1} / {len(self.inputpoints)}")
                 rmax = 0
                 try:
                     solution = root(residuals,
